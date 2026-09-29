@@ -4,6 +4,7 @@ import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
 import { BatchUndoScheduler } from '@/logic/batchUndoScheduler';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
+import { batchCompletesToday } from '@/logic/completion';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { isListFull } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
@@ -129,7 +130,16 @@ export const useAppStore = create<AppState>((set, get) => {
   // resolves, whether via timeout, rollover, or backgrounding.
   const batchScheduler = new BatchUndoScheduler<tasksRepo.Task>(UNDO_WINDOW_MS, (tasks) => {
     tasksRepo.removeMany(tasks.map((t) => t.id));
-    set({ pendingBatch: null });
+    // Spec 3.4/4 v6: "Done for today." only follows an actual commit (not
+    // Undo, which cancels the batch before it gets here) of a batch that
+    // included at least one today task (not a tomorrow-only batch).
+    const { todayDay, settings } = get();
+    if (batchCompletesToday(tasks, todayDay)) {
+      settingsRepo.setLastCompletedDate(todayDay);
+      set({ pendingBatch: null, settings: { ...settings, lastCompletedDate: todayDay } });
+    } else {
+      set({ pendingBatch: null });
+    }
     get().refreshTasks();
   });
 

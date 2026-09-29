@@ -5,6 +5,7 @@ export type Settings = {
   dayEndTime: string; // 'HH:mm', default '04:00'
   reminderEnabled: boolean;
   lastCarryPromptDate: string | null; // 'YYYY-MM-DD', null if never shown
+  lastCompletedDate: string | null; // 'YYYY-MM-DD', null if never emptied Today by completing (spec 3.4/4 v6)
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -12,9 +13,10 @@ export const DEFAULT_SETTINGS: Settings = {
   dayEndTime: '04:00',
   reminderEnabled: true,
   lastCarryPromptDate: null,
+  lastCompletedDate: null,
 };
 
-type StoredKey = 'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'lastCarryPromptDate';
+type StoredKey = 'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'lastCarryPromptDate' | 'lastCompletedDate';
 
 function getRaw(key: StoredKey): string | null {
   const row = getDb().getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -37,7 +39,8 @@ export function getSettings(): Settings {
   const reminderEnabled =
     reminderEnabledRaw === null ? DEFAULT_SETTINGS.reminderEnabled : reminderEnabledRaw === '1';
   const lastCarryPromptDate = getRaw('lastCarryPromptDate');
-  return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate };
+  const lastCompletedDate = getRaw('lastCompletedDate');
+  return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate, lastCompletedDate };
 }
 
 export function setPlanningTime(hhmm: string): void {
@@ -54,4 +57,8 @@ export function setReminderEnabled(enabled: boolean): void {
 
 export function setLastCarryPromptDate(dayKey: string): void {
   setRaw('lastCarryPromptDate', dayKey);
+}
+
+export function setLastCompletedDate(dayKey: string): void {
+  setRaw('lastCompletedDate', dayKey);
 }

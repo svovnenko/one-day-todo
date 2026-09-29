@@ -3,7 +3,7 @@ import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Task } from '@/db/tasksRepo';
-import { buildCarryOverCandidates, CarryOverCandidate, defaultCheckedIds } from '@/logic/carryOver';
+import { buildCarryOverCandidates, CarryOverCandidate } from '@/logic/carryOver';
 import { freeSlots } from '@/logic/limits';
 import { colors, layout } from '@/theme';
 
@@ -38,19 +38,16 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
   const free = freeSlots(tomorrowTasks.length);
 
-  // Initializes the checkboxes only on the hidden -> visible transition
-  // (intentionally depends only on `visible`, not `tasks`/`tomorrowTasks` --
-  // app/index.tsx rebuilds those arrays on every render, and re-initializing
-  // on every one of those would snap a checkbox the user just toggled back
-  // while the sheet is still open).
+  // Resets the checkboxes to all-unchecked only on the hidden -> visible
+  // transition (intentionally depends only on `visible`, not on
+  // `tasks`/`tomorrowTasks` -- app/index.tsx rebuilds those arrays on
+  // every render, and re-initializing on every one of those would snap a
+  // checkbox the user just toggled back while the sheet is still open).
+  // Spec 3.4 v6: moving a task to tomorrow must be a conscious choice, so
+  // nothing starts pre-checked -- not even a carryCount-based nudge.
   useEffect(() => {
     if (visible) {
-      setChecked(() => {
-        const ids = defaultCheckedIds(candidates, free);
-        const initial: Record<string, boolean> = {};
-        for (const id of ids) initial[id] = true;
-        return initial;
-      });
+      setChecked({});
       translateY.setValue(SHEET_OFFSCREEN_OFFSET);
       Animated.timing(translateY, {
         toValue: 0,
@@ -86,6 +83,8 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   }
 
   const tomorrowNote = free === 0 ? 'Tomorrow is full' : `Tomorrow: ${free} free`;
+  const anyChecked = candidates.some((c) => checked[c.task.id]);
+  const moveDisabled = free === 0 || !anyChecked;
 
   return (
     <View style={styles.backdrop} pointerEvents="box-none">
@@ -125,7 +124,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
               );
             })}
           </ScrollView>
-          <Pressable style={[styles.moveButton, free === 0 && styles.moveButtonDisabled]} onPress={handleMove} disabled={free === 0}>
+          <Pressable style={[styles.moveButton, moveDisabled && styles.moveButtonDisabled]} onPress={handleMove} disabled={moveDisabled}>
             <Text style={styles.moveButtonText}>Move</Text>
           </Pressable>
           <Pressable style={styles.skipButton} onPress={onSkip}>

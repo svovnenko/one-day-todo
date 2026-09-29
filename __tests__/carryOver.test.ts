@@ -1,10 +1,4 @@
-import {
-  buildCarryOverCandidates,
-  defaultChecked,
-  defaultCheckedIds,
-  isBlockedFromMoving,
-  shouldShowCarryPrompt,
-} from '@/logic/carryOver';
+import { buildCarryOverCandidates, isBlockedFromMoving, shouldShowCarryPrompt } from '@/logic/carryOver';
 import type { Task } from '@/db/tasksRepo';
 
 // Only the pure decision functions are unit tested here; moveTasks touches
@@ -46,18 +40,6 @@ describe('shouldShowCarryPrompt', () => {
   });
 });
 
-describe('defaultChecked', () => {
-  it('is checked when carryCount is below 3', () => {
-    expect(defaultChecked(makeTask({ carryCount: 0 }))).toBe(true);
-    expect(defaultChecked(makeTask({ carryCount: 2 }))).toBe(true);
-  });
-
-  it('is unchecked once carryCount reaches 3', () => {
-    expect(defaultChecked(makeTask({ carryCount: 3 }))).toBe(false);
-    expect(defaultChecked(makeTask({ carryCount: 5 }))).toBe(false);
-  });
-});
-
 describe('isBlockedFromMoving (spec 3.4 v5: max 5 moves)', () => {
   it('is not blocked below the limit', () => {
     expect(isBlockedFromMoving(makeTask({ carryCount: 4 }))).toBe(false);
@@ -89,47 +71,3 @@ describe('buildCarryOverCandidates', () => {
   });
 });
 
-describe('defaultCheckedIds (spec 3.4 v5: capped at tomorrow\'s free slots)', () => {
-  it('checks eligible tasks in list order up to the free-slot cap', () => {
-    const today = [
-      makeTask({ id: 'a', position: 1 }),
-      makeTask({ id: 'b', position: 2 }),
-      makeTask({ id: 'c', position: 3 }),
-    ];
-    const candidates = buildCarryOverCandidates(today, []);
-
-    const checkedWithTwoFree = defaultCheckedIds(candidates, 2);
-    expect(checkedWithTwoFree).toEqual(new Set(['a', 'b']));
-  });
-
-  it('a ×5 blocked task is never checked, regardless of free slots', () => {
-    const today = [makeTask({ id: 'a', carryCount: 5 })];
-    const candidates = buildCarryOverCandidates(today, []);
-    expect(defaultCheckedIds(candidates, 10)).toEqual(new Set());
-  });
-
-  it('a task with carryCount >= 3 (but < 5) starts unchecked, as before', () => {
-    const today = [makeTask({ id: 'a', carryCount: 3 })];
-    const candidates = buildCarryOverCandidates(today, []);
-    expect(defaultCheckedIds(candidates, 10)).toEqual(new Set());
-  });
-
-  it('with free = 0, nothing new gets checked', () => {
-    const today = [makeTask({ id: 'a' }), makeTask({ id: 'b', position: 2 })];
-    const candidates = buildCarryOverCandidates(today, []);
-    expect(defaultCheckedIds(candidates, 0)).toEqual(new Set());
-  });
-
-  it('a deduplicating task is checked without counting against the free-slot cap', () => {
-    const today = [
-      makeTask({ id: 'a', text: 'Dupe' }),
-      makeTask({ id: 'b', text: 'New task', position: 2 }),
-    ];
-    const tomorrow = [makeTask({ id: 'c', text: 'Dupe', day: '2026-09-30' })];
-    const candidates = buildCarryOverCandidates(today, tomorrow);
-
-    // Only 1 free slot, but the dedup task doesn't consume it, so both end up checked.
-    const checked = defaultCheckedIds(candidates, 1);
-    expect(checked).toEqual(new Set(['a', 'b']));
-  });
-});

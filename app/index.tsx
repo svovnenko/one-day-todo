@@ -48,6 +48,7 @@ export default function HomeScreen() {
   const tomorrowDay = useAppStore((s) => s.tomorrowDay);
   const todayTasks = useAppStore((s) => s.todayTasks);
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
+  const lastCompletedDate = useAppStore((s) => s.settings.lastCompletedDate);
   const pendingBatch = useAppStore((s) => s.pendingBatch);
   const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
   const carryPromptDue = useAppStore((s) => s.carryPromptDue);
@@ -395,6 +396,12 @@ export default function HomeScreen() {
     [tasks.length]
   );
 
+  // Spec 3.4/4 v6: Today's empty state is "Done for today." once a batch
+  // committed today has actually emptied it by finishing tasks -- Tomorrow
+  // always gets the normal prompt, and so does Today before that's true.
+  const emptyMessage =
+    selectedView === 'today' && lastCompletedDate === todayDay ? 'Done for today.' : 'Nothing here. Tap + to add.';
+
   const showFallbackLink = mode === 'planning' && selectedView === 'today';
   const footerElement = useMemo(
     () =>
@@ -446,7 +453,7 @@ export default function HomeScreen() {
             keyExtractor={keyExtractor}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={contentContainerStyle}
-            ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
+            ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
             renderItem={renderItem}
             ListFooterComponent={footerElement}
             onContentSizeChange={handleContentSizeChange}

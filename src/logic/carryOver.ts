@@ -26,11 +26,6 @@ export function shouldShowCarryPrompt(
   return true;
 }
 
-/** Tasks with carry_count >= 3 are eligible to start checked -- carry_count >= 5 is a hard block, handled separately (isBlockedFromMoving). */
-export function defaultChecked(task: Task): boolean {
-  return task.carryCount < 3;
-}
-
 /** Spec 3.4 v5: a task moved MAX_CARRY_COUNT times can't be moved again -- it stays in Today. */
 export function isBlockedFromMoving(task: Task): boolean {
   return task.carryCount >= MAX_CARRY_COUNT;
@@ -52,31 +47,6 @@ export function buildCarryOverCandidates(todayTasks: Task[], tomorrowTasks: Task
     blocked: isBlockedFromMoving(task),
     deduplicates: tomorrowTextsInUse.has(task.text),
   }));
-}
-
-/**
- * Which candidates should be checked when the sheet first opens (spec
- * 3.4 v5): movable (not blocked) candidates below the carry_count 3
- * nudge, in list order, until `free` slot-consuming checks are used.
- * A deduplicating candidate is always checked if eligible -- it merges
- * into an existing tomorrow task rather than consuming a slot, so it
- * never counts against `free`.
- */
-export function defaultCheckedIds(candidates: CarryOverCandidate[], free: number): Set<string> {
-  const checked = new Set<string>();
-  let slotsUsed = 0;
-  for (const candidate of candidates) {
-    if (candidate.blocked) continue;
-    if (!defaultChecked(candidate.task)) continue;
-    if (candidate.deduplicates) {
-      checked.add(candidate.task.id);
-      continue;
-    }
-    if (slotsUsed >= free) continue;
-    checked.add(candidate.task.id);
-    slotsUsed += 1;
-  }
-  return checked;
 }
 
 /**
