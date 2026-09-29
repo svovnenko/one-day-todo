@@ -73,7 +73,7 @@ The target user is the owner only (single user, a personal app).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Open-task limit (v5):** each list (Today, Tomorrow) holds at most **10 open tasks**. Tasks in the pending Undo batch still count until the batch commits, so Undo can never push a list over 10. When a list is full:
   - the + FAB is greyed out (40% opacity);
-  - **no popup or toast of any kind (v7)**. Instead, a grey line `Full — finish a task to add more` (17pt, `#8E8E93`) is shown **as the first footer line at the end of the list**, above the `Move unfinished to tomorrow` link or `Tomorrow is full` text when those are present. Because it's part of the list, it scrolls with it and never overlaps anything;
+  - **no popup or toast of any kind (v7)**. Instead, a grey line `Full — finish a task to add more` (15pt, `#8E8E93`, same style as the other footer lines) is shown **as the first footer line at the end of the list**, above the `Move unfinished to tomorrow` link or `Tomorrow is full` text when those are present. Because it's part of the list, it scrolls with it and never overlaps anything;
   - tapping the faded + gives a **warning haptic** (`Haptics.notificationAsync(Warning)`) and a short horizontal **shake** of the button (about 300ms), and does nothing else;
   - if the input bar is open when the 10th task is added, the bar closes; the footer line appears.
   - Lists that are already over 10 (older data) are left alone; you just can't add until they drop below 10.

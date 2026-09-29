@@ -396,16 +396,21 @@ export default function HomeScreen() {
   const footerElement = useMemo(() => {
     if (footerLineList.length === 0) return null;
     return (
-      <View>
+      <View style={styles.footerBlock}>
         {footerLineList.map((line) =>
           line.tappable ? (
-            <Pressable key={line.text} style={styles.fallbackLink} onPress={openCarrySheet}>
-              <Text style={styles.fallbackLinkText}>{line.text}</Text>
+            <Pressable
+              key={line.text}
+              onPress={openCarrySheet}
+              hitSlop={{ top: 8, bottom: 8 }}
+              style={({ pressed }) => pressed && styles.footerLinePressed}
+            >
+              <Text style={styles.footerLineText}>{line.text}</Text>
             </Pressable>
           ) : (
-            <View key={line.text} style={styles.fallbackLink}>
-              <Text style={line.kind === 'full' ? styles.fullLineText : styles.fallbackLinkText}>{line.text}</Text>
-            </View>
+            <Text key={line.text} style={styles.footerLineText}>
+              {line.text}
+            </Text>
           )
         )}
       </View>
@@ -483,7 +488,7 @@ const styles = StyleSheet.create({
   listContent: { paddingTop: layout.listTopGap, paddingBottom: layout.fabSize + 32 },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { fontSize: type.empty, color: colors.muted },
-  fallbackLink: { paddingHorizontal: layout.screenPadding, paddingVertical: 12 },
-  fallbackLinkText: { fontSize: type.header, color: colors.muted },
-  fullLineText: { fontSize: type.empty, color: colors.muted },
+  footerBlock: { paddingHorizontal: layout.screenPadding, marginTop: 12, gap: 6 },
+  footerLineText: { fontSize: type.header, color: colors.muted },
+  footerLinePressed: { opacity: 0.5 },
 });
