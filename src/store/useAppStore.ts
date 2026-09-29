@@ -6,6 +6,19 @@ import { isPlanningMode, todayKey, tomorrowKey } from '@/logic/dates';
 
 export type View = 'today' | 'tomorrow';
 
+const UNDO_WINDOW_MS = 4000;
+
+/**
+ * A task the user just completed (swiped right) or emptied out (edited to
+ * blank text). It stays in SQLite untouched until the window commits, so
+ * killing the app mid-window loses nothing (spec section 5) -- only the UI
+ * hides it and shows the Undo pill. `timeoutId` auto-commits after 4s.
+ */
+type PendingUndo = {
+  task: tasksRepo.Task;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
 type AppState = {
   isReady: boolean;
   settings: settingsRepo.Settings;
@@ -15,15 +28,21 @@ type AppState = {
   todayTasks: tasksRepo.Task[];
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
+  pendingUndo: PendingUndo | null;
 
   /** Opens the DB, loads settings + today/tomorrow's tasks, and picks the default view. */
   init: () => void;
   /** Re-reads today/tomorrow's tasks from SQLite into state. */
   refreshTasks: () => void;
   addTask: (view: View, text: string) => void;
-  /** Saving empty text deletes the task instead (per spec 3.2). */
+  /** Saving empty text completes (deletes-with-undo) the task instead (spec 3.2). */
   editTask: (id: string, text: string) => void;
-  deleteTask: (id: string) => void;
+  /** Swipe-right completion: opens (or replaces) the 4s Undo window. */
+  completeTask: (task: tasksRepo.Task) => void;
+  /** Cancels the pending deletion; the task simply stays where it was. */
+  undoPending: () => void;
+  /** Permanently deletes whatever is pending (called on timeout or explicitly). */
+  commitPendingUndo: () => void;
   setSelectedView: (view: View) => void;
 };
 
@@ -40,6 +59,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   todayTasks: [],
   tomorrowTasks: [],
   selectedView: 'today',
+  pendingUndo: null,
 
   init: () => {
     const settings = settingsRepo.getSettings();
@@ -80,15 +100,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   editTask: (id, text) => {
     const trimmed = sanitizeTaskText(text);
     if (!trimmed) {
-      tasksRepo.remove(id);
-    } else {
-      tasksRepo.updateText(id, trimmed);
+      const task =
+        get().todayTasks.find((t) => t.id === id) ?? get().tomorrowTasks.find((t) => t.id === id);
+      if (task) get().completeTask(task);
+      return;
     }
+    tasksRepo.updateText(id, trimmed);
     get().refreshTasks();
   },
 
-  deleteTask: (id) => {
-    tasksRepo.remove(id);
+  completeTask: (task) => {
+    // Only one pending undo at a time -- completing another task commits
+    // (permanently deletes) whatever was already pending.
+    get().commitPendingUndo();
+    const timeoutId = setTimeout(() => get().commitPendingUndo(), UNDO_WINDOW_MS);
+    set({ pendingUndo: { task, timeoutId } });
+  },
+
+  undoPending: () => {
+    const { pendingUndo } = get();
+    if (!pendingUndo) return;
+    clearTimeout(pendingUndo.timeoutId);
+    set({ pendingUndo: null });
+  },
+
+  commitPendingUndo: () => {
+    const { pendingUndo } = get();
+    if (!pendingUndo) return;
+    clearTimeout(pendingUndo.timeoutId);
+    tasksRepo.remove(pendingUndo.task.id);
+    set({ pendingUndo: null });
     get().refreshTasks();
   },
 

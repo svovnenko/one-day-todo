@@ -17,6 +17,8 @@ import { AddFab } from '@/components/AddFab';
 import { Header } from '@/components/Header';
 import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
+import { UndoPill } from '@/components/UndoPill';
+import type { Task } from '@/db/tasksRepo';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
@@ -28,13 +30,18 @@ export default function HomeScreen() {
   const tomorrowDay = useAppStore((s) => s.tomorrowDay);
   const todayTasks = useAppStore((s) => s.todayTasks);
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
+  const pendingUndo = useAppStore((s) => s.pendingUndo);
   const init = useAppStore((s) => s.init);
   const addTask = useAppStore((s) => s.addTask);
+  const editTask = useAppStore((s) => s.editTask);
+  const completeTask = useAppStore((s) => s.completeTask);
+  const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
 
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   const [inputVisible, setInputVisible] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
@@ -43,32 +50,46 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (inputVisible) {
-      // Focus once the input bar has mounted.
+      // Focus once the input bar has mounted (or when it re-mounts for a new target).
       const id = setTimeout(() => inputRef.current?.focus(), 0);
       return () => clearTimeout(id);
     }
   }, [inputVisible]);
 
+  /** Saves whatever is currently in the input (add, or edit of `editingTaskId`). */
   function commitDraft() {
-    const text = draft;
-    setDraft('');
-    if (text.trim().length > 0) {
-      addTask(selectedView, text);
+    if (editingTaskId) {
+      editTask(editingTaskId, draft);
+    } else if (draft.trim().length > 0) {
+      addTask(selectedView, draft);
     }
   }
 
   function handleSubmit() {
-    // Return adds the task and keeps the keyboard open for fast entry.
-    commitDraft();
+    if (editingTaskId) {
+      // Editing is a single-task operation: Return saves and closes.
+      closeInput();
+    } else {
+      // Adding: Return adds and keeps the keyboard open for fast entry.
+      const text = draft;
+      setDraft('');
+      if (text.trim().length > 0) addTask(selectedView, text);
+    }
   }
 
   function closeInput() {
     commitDraft();
+    setEditingTaskId(null);
+    setDraft('');
     Keyboard.dismiss();
     setInputVisible(false);
   }
 
-  function openInput() {
+  /** Opens the input bar for a new task (task=null) or to edit an existing one. */
+  function openInputFor(task: Task | null) {
+    commitDraft(); // save whatever was already being entered/edited first
+    setEditingTaskId(task?.id ?? null);
+    setDraft(task?.text ?? '');
     setInputVisible(true);
   }
 
@@ -76,7 +97,8 @@ export default function HomeScreen() {
     return <SafeAreaView style={styles.screen} />;
   }
 
-  const tasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
+  const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
+  const tasks = pendingUndo ? rawTasks.filter((t) => t.id !== pendingUndo.task.id) : rawTasks;
   const todayLabel = formatHeaderDate(parseDayKey(todayDay));
   const tomorrowLabel = formatHeaderDate(parseDayKey(tomorrowDay));
 
@@ -103,7 +125,9 @@ export default function HomeScreen() {
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={[styles.listContent, tasks.length === 0 && styles.emptyContainer]}
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
-            renderItem={({ item }) => <TaskRow task={item} />}
+            renderItem={({ item }) => (
+              <TaskRow task={item} onComplete={completeTask} onEdit={(task) => openInputFor(task)} />
+            )}
           />
         </Pressable>
 
@@ -112,7 +136,8 @@ export default function HomeScreen() {
         ) : null}
       </KeyboardAvoidingView>
 
-      {!inputVisible ? <AddFab onPress={openInput} /> : null}
+      {!inputVisible ? <AddFab onPress={() => openInputFor(null)} /> : null}
+      {pendingUndo ? <UndoPill onUndo={undoPending} /> : null}
     </SafeAreaView>
   );
 }
