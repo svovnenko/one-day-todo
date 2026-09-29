@@ -4,7 +4,7 @@ import Reanimated, { Easing, useAnimatedProps, useSharedValue, withTiming } from
 import Svg, { Circle } from 'react-native-svg';
 
 import { UNDO_WINDOW_MS } from '@/store/useAppStore';
-import { colors, layout } from '@/theme';
+import { colors } from '@/theme';
 
 type Props = {
   /** The pending task's id, or null when nothing is pending. Drives this component's own mount/reset/fade-out lifecycle (see comment below). */
@@ -12,7 +12,7 @@ type Props = {
   onUndo: () => void;
 };
 
-const SIZE = layout.fabSize; // 56pt, mirrors the + FAB
+const SIZE = 64; // v4 (TASK_FIXES_05): bumped from 56pt; no longer tied to the + FAB's own size
 const STROKE_WIDTH = 3;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -21,9 +21,10 @@ const EXIT_FADE_MS = 200;
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 
 /**
- * Spec 3.2 / 4: round 56pt Undo button, bottom-right, mirroring the FAB --
- * dark background, only the white "Undo" text, no icon. A white 3pt ring
- * empties clockwise from 12 o'clock over UNDO_WINDOW_MS.
+ * Spec 3.2 / 4: round 64pt Undo button, bottom center, level with the +
+ * FAB (same bottom offset) -- dark background, only the white "Undo"
+ * text, no icon. A white 3pt ring empties clockwise from 12 o'clock over
+ * UNDO_WINDOW_MS.
  *
  * This component manages its own show/reset/fade-out purely from `taskId`
  * (rather than being mounted with a `key` of the task id): a `key` change
@@ -89,8 +90,10 @@ export function UndoButton({ taskId, onUndo }: Props) {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    right: 16,
-    bottom: 16,
+    left: 0,
+    right: 0,
+    bottom: 16, // same bottom offset as the + FAB
+    alignItems: 'center',
   },
   button: {
     width: SIZE,

@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import type { Task } from '@/db/tasksRepo';
@@ -21,7 +21,6 @@ type Props = {
    * it renders -- removing it earlier would cut the animation short.
    */
   onAnimationComplete: (task: Task) => void;
-  onEdit: (task: Task) => void;
 };
 
 /** Row shows strike-through+grey briefly before collapsing, per spec 3.2. */
@@ -30,10 +29,11 @@ const FADE_DURATION_MS = 150;
 
 /**
  * Swipe right to complete (full swipe, revealing a light-grey background
- * with a checkmark); tap to edit. A tap never completes, preventing
- * accidental deletions.
+ * with a checkmark). No editing (spec 3.2 v4): a tap does nothing -- no
+ * handler, no highlight, no feedback of any kind. A plain View, not a
+ * Pressable, so there's nothing for a tap to trigger.
  */
-export function TaskRow({ task, onSwipeThreshold, onAnimationComplete, onEdit }: Props) {
+export function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) {
   const [isCompleting, setIsCompleting] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const swipeableRef = useRef<SwipeableMethods>(null);
@@ -77,7 +77,7 @@ export function TaskRow({ task, onSwipeThreshold, onAnimationComplete, onEdit }:
         // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
         // for a rightward drag that opens the left action panel, not LEFT.)
         onSwipeableOpen={() => handleFullSwipe()}>
-        <Pressable style={styles.row} onPress={() => !isCompleting && onEdit(task)}>
+        <View style={styles.row}>
           <Text style={[styles.text, isCompleting && styles.textCompleting]} numberOfLines={1}>
             {task.text}
             {task.carryCount >= 1 ? (
@@ -86,7 +86,7 @@ export function TaskRow({ task, onSwipeThreshold, onAnimationComplete, onEdit }:
               </Text>
             ) : null}
           </Text>
-        </Pressable>
+        </View>
       </Swipeable>
     </Animated.View>
   );

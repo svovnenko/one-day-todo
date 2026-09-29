@@ -15,11 +15,10 @@ export type Mode = 'day' | 'planning';
 export const UNDO_WINDOW_MS = 3000;
 
 /**
- * A task the user just completed (swiped right) or emptied out (edited to
- * blank text). It stays in SQLite untouched until the window commits, so
- * killing the app mid-window loses nothing (spec section 5) -- only the UI
- * hides it and shows the Undo pill. `timeoutId` auto-commits after
- * UNDO_WINDOW_MS.
+ * A task the user just completed (swiped right). It stays in SQLite
+ * untouched until the window commits, so killing the app mid-window loses
+ * nothing (spec section 5) -- only the UI hides it and shows the Undo
+ * button. `timeoutId` auto-commits after UNDO_WINDOW_MS.
  */
 type PendingUndo = {
   task: tasksRepo.Task;
@@ -57,8 +56,6 @@ type AppState = {
   refreshTasks: () => void;
   /** In day mode, a 'tomorrow' target is redirected to today -- Tomorrow doesn't exist yet (spec 3.1). */
   addTask: (view: View, text: string) => void;
-  /** Saving empty text completes (deletes-with-undo) the task instead (spec 3.2). */
-  editTask: (id: string, text: string) => void;
   /**
    * Starts a task's completion: commits any already-pending task first,
    * then opens (or replaces) the Undo window (UNDO_WINDOW_MS) for this
@@ -161,18 +158,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { todayDay, tomorrowDay, mode } = get();
     const effectiveView = resolveView(view, mode);
     tasksRepo.add(effectiveView === 'today' ? todayDay : tomorrowDay, trimmed);
-    get().refreshTasks();
-  },
-
-  editTask: (id, text) => {
-    const trimmed = sanitizeTaskText(text);
-    if (!trimmed) {
-      const task =
-        get().todayTasks.find((t) => t.id === id) ?? get().tomorrowTasks.find((t) => t.id === id);
-      if (task) get().beginComplete(task);
-      return;
-    }
-    tasksRepo.updateText(id, trimmed);
     get().refreshTasks();
   },
 

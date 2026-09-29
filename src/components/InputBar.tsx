@@ -12,7 +12,8 @@ type Props = {
 /**
  * Spec 3.3 / 4: docked above the keyboard, white, 1px top border, Return
  * keeps the keyboard open. The keyboard starts lowercase (autoCapitalize
- * "none") for both adding and editing; text is saved exactly as typed.
+ * "none") when adding; text is saved exactly as typed. Adding is the only
+ * use of this bar -- tasks can't be edited (spec 3.2 v4).
  */
 export const InputBar = forwardRef<TextInput, Props>(function InputBar({ value, onChangeText, onSubmit }, ref) {
   return (

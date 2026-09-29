@@ -20,7 +20,6 @@ import { Header } from '@/components/Header';
 import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
 import { UndoButton } from '@/components/UndoButton';
-import type { Task } from '@/db/tasksRepo';
 import { useDayClock } from '@/hooks/useDayClock';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
@@ -39,7 +38,6 @@ export default function HomeScreen() {
   const carryPromptDue = useAppStore((s) => s.carryPromptDue);
   const init = useAppStore((s) => s.init);
   const addTask = useAppStore((s) => s.addTask);
-  const editTask = useAppStore((s) => s.editTask);
   const beginComplete = useAppStore((s) => s.beginComplete);
   const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
@@ -52,7 +50,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   const [inputVisible, setInputVisible] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   // Rows whose own strike-through+fade animation has finished and should
   // now actually be removed from the list (TASK_FIXES_04) -- kept
@@ -100,113 +97,65 @@ export default function HomeScreen() {
     });
   }, [todayTasks, tomorrowTasks]);
 
-  // TASK_FIXES_04 (bug 2): each input session gets an id. openInputFor()
-  // bumps it; closeInput()/cancelInput() also bump it (invalidating even
-  // their OWN Keyboard.dismiss() call's later keyboardDidHide). The
-  // keyboardDidHide listener below captures the session id it was
-  // subscribed under and only acts if it's still current -- so a tap that
-  // switches the edit target (openInputFor running before a stale
-  // keyboardDidHide from the previous session arrives) can never have
-  // that stale event undo the switch.
+  // Guards close/open against a stale keyboardDidHide firing after this
+  // session has already ended (e.g. our own Keyboard.dismiss() inside
+  // closeInput() triggering the same event again).
   const sessionIdRef = useRef(0);
 
-  // Refocuses whenever the input opens AND whenever the edit target
-  // changes while it's already open (e.g. tapping a different task, or a
-  // just-added one, without the bar ever closing in between) -- depending
-  // on [inputVisible] alone missed that second case.
   useEffect(() => {
     if (inputVisible) {
+      // Focus once the input bar has mounted.
       const id = setTimeout(() => inputRef.current?.focus(), 0);
       return () => clearTimeout(id);
     }
-  }, [inputVisible, editingTaskId]);
+  }, [inputVisible]);
 
   // Spec 3.3: the input bar closes whenever the keyboard hides for any
   // reason (tap outside, keyboard dismiss, swipe down, leaving the
-  // screen). Re-subscribed whenever draft/editingTaskId change so the
-  // listener always closes over their latest values, not stale ones from
-  // when the input first opened.
+  // screen). Re-subscribed whenever draft changes so the listener always
+  // closes over its latest value, not a stale one from when it opened.
   useEffect(() => {
     if (!inputVisible) return;
     const mySession = sessionIdRef.current;
     const subscription = Keyboard.addListener('keyboardDidHide', () => {
-      if (sessionIdRef.current !== mySession) return; // a newer/closed session owns the input now
+      if (sessionIdRef.current !== mySession) return; // this session already ended
       closeInput();
     });
     return () => subscription.remove();
-  }, [inputVisible, editingTaskId, draft]);
+  }, [inputVisible, draft]);
 
-  /** Saves whatever is currently in the input (add, or edit of `editingTaskId`). */
+  /** Saves the draft if non-empty. */
   function commitDraft() {
-    if (editingTaskId) {
-      editTask(editingTaskId, draft);
-    } else if (draft.trim().length > 0) {
+    if (draft.trim().length > 0) {
       addTask(selectedView, draft);
     }
   }
 
   function handleSubmit() {
-    if (editingTaskId) {
-      // Editing is a single-task operation: Return saves and closes.
-      closeInput();
-    } else {
-      // Adding: Return adds and keeps the keyboard open for fast entry.
-      // blurOnSubmit is false on the TextInput, so this never hides the
-      // keyboard, and the keyboardDidHide listener above never fires here.
-      const text = draft;
-      setDraft('');
-      if (text.trim().length > 0) addTask(selectedView, text);
-    }
+    // Return adds and keeps the keyboard open for fast entry.
+    // blurOnSubmit is false on the TextInput, so this never hides the
+    // keyboard, and the keyboardDidHide listener above never fires here.
+    const text = draft;
+    setDraft('');
+    if (text.trim().length > 0) addTask(selectedView, text);
   }
 
   /** Saves any non-empty draft first, then closes the input bar. */
   function closeInput() {
     sessionIdRef.current += 1; // invalidate this session (including our own Keyboard.dismiss() below)
     commitDraft();
-    const wasEditingId = editingTaskId;
-    setEditingTaskId(null);
     setDraft('');
     Keyboard.dismiss();
     setInputVisible(false);
-    // No swipe animation plays for an edit-to-empty completion (spec 3.2),
-    // so hide it immediately rather than waiting for a callback that will
-    // never come from TaskRow.
-    if (wasEditingId && draft.trim().length === 0) {
-      setHiddenRowIds((prev) => new Set(prev).add(wasEditingId));
-    }
   }
 
-  /**
-   * Closes the input bar WITHOUT saving -- used when the task being edited
-   * is completed or deleted out from under it (spec 3.3).
-   */
-  function cancelInput() {
+  function openInput() {
     sessionIdRef.current += 1;
-    setEditingTaskId(null);
-    setDraft('');
-    setInputVisible(false);
-    Keyboard.dismiss();
-  }
-
-  /** Opens the input bar for a new task (task=null) or to edit an existing one. */
-  function openInputFor(task: Task | null) {
-    sessionIdRef.current += 1; // fresh session, invalidates any still-in-flight listener from the previous one
-    commitDraft(); // save whatever was already being entered/edited first
-    setEditingTaskId(task?.id ?? null);
-    setDraft(task?.text ?? '');
     setInputVisible(true);
   }
 
-  /** Swipe threshold crossed: start the Undo window immediately (spec 3.2/4). */
-  function handleSwipeThreshold(task: Task) {
-    if (task.id === editingTaskId) {
-      cancelInput();
-    }
-    beginComplete(task);
-  }
-
   /** This row's own strike-through+fade has finished -- now actually remove it from the list. */
-  function handleAnimationComplete(task: Task) {
+  function handleAnimationComplete(task: { id: string }) {
     // If Undo was already pressed (or a newer completion superseded this
     // one) before this row's own animation finished, don't hide it --
     // either it's already been restored, or it's already gone from the
@@ -281,17 +230,18 @@ export default function HomeScreen() {
         />
 
         {/*
-          No outer "tap outside to close" Pressable here (TASK_FIXES_04,
-          bug 2, suspect 3): one used to wrap this list with
-          onPress={closeInput}, but a tap on a row could reach BOTH it and
-          the row's own Pressable (they sit in different touch systems --
-          the row is inside a gesture-handler Swipeable), racing
-          openInputFor against closeInput for the same tap. Closing on
-          "tap outside" is instead handled entirely by keyboardShouldPersistTaps="handled"
-          (taps a row handles never auto-dismiss the keyboard) plus the
-          keyboardDidHide listener above (any tap that ISN'T handled by a
-          row -- empty list space, the header, elsewhere -- blurs the
-          TextInput natively, which closes the input bar from there).
+          No "tap outside to close" Pressable wraps this list (see
+          TASK_FIXES_04): one used to, with onPress={closeInput}, but a
+          tap on a row could reach BOTH it and the row's own touch handling
+          (different touch systems -- rows sit inside a gesture-handler
+          Swipeable), racing against each other for the same tap. Closing
+          on "tap outside" is handled entirely by
+          keyboardShouldPersistTaps="handled" (a tap on a row never
+          auto-dismisses the keyboard) plus the keyboardDidHide listener
+          above (anything else -- empty list space, the header -- blurs
+          the TextInput natively, which closes the bar from there). Rows
+          no longer have any tap handler at all (spec 3.2 v4: no editing),
+          so this is now purely a leftover-risk note, not a live bug.
         */}
         <View style={styles.listArea}>
           <FlatList
@@ -301,12 +251,7 @@ export default function HomeScreen() {
             contentContainerStyle={[styles.listContent, tasks.length === 0 && styles.emptyContainer]}
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
             renderItem={({ item }) => (
-              <TaskRow
-                task={item}
-                onSwipeThreshold={handleSwipeThreshold}
-                onAnimationComplete={handleAnimationComplete}
-                onEdit={(task) => openInputFor(task)}
-              />
+              <TaskRow task={item} onSwipeThreshold={beginComplete} onAnimationComplete={handleAnimationComplete} />
             )}
             ListFooterComponent={
               showFallbackLink ? (
@@ -323,7 +268,7 @@ export default function HomeScreen() {
         ) : null}
       </KeyboardAvoidingView>
 
-      {!inputVisible ? <AddFab onPress={() => openInputFor(null)} /> : null}
+      {!inputVisible ? <AddFab onPress={openInput} /> : null}
       <UndoButton taskId={pendingUndo?.task.id ?? null} onUndo={handleUndo} />
 
       <CarryOverSheet

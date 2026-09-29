@@ -61,10 +61,6 @@ export function add(day: string, text: string): Task {
   return { id, text, day, position, carryCount: 0, createdAt };
 }
 
-export function updateText(id: string, text: string): void {
-  getDb().runSync('UPDATE tasks SET text = ? WHERE id = ?', text, id);
-}
-
 export function remove(id: string): void {
   getDb().runSync('DELETE FROM tasks WHERE id = ?', id);
 }

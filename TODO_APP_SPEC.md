@@ -73,20 +73,19 @@ The target user is the owner only (single user, a personal app).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Swipe right** on a task → it completes:
   - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then collapses with a 150ms fade.
-  - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 56pt, dark `#1C1C1E`, shows only the white text **`Undo`** (15pt, semibold) with no icon, and sits at the bottom-right, mirroring the + FAB.
+  - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 64pt, dark `#1C1C1E`, shows only the white text **`Undo`** (15pt, semibold) with no icon, and sits at the **bottom center**, level with the + FAB.
   - A white **countdown ring** (3pt stroke) around the button empties clockwise from 12 o'clock over **3 seconds**, like a timer. Tapping the button restores the task to its original position.
   - After 3 seconds, or when another task is completed (only one pending undo at a time; the previous one is committed), the task is **deleted permanently**.
-- **Tap** a task → edit its text (reuses the input bar, prefilled). Saving empty text deletes the task (also with the Undo pill).
+- **No editing (v4, owner decision):** tapping a task does **nothing**. A typo is fixed by completing the task and adding it again.
 - A tap never completes a task, which prevents accidental deletions.
 - No reordering, no due dates, no notes.
 
 ### 3.3 Adding (input)
 - A **floating round button** sits at the bottom-left: a white circle with a soft shadow and a **"+"** icon (replaces the ↓ button in the reference screenshot).
 - Tapping it opens a **text input bar docked above the keyboard** (placeholder: `New task`).
-- The keyboard starts in **lowercase** (`autoCapitalize="none"`) for both adding and editing. The text is saved exactly as typed.
+- The keyboard starts in **lowercase** (`autoCapitalize="none"`) when adding. The text is saved exactly as typed.
 - **Return** adds the task, clears the field, and **keeps the keyboard open** for fast entry of several lines.
 - The input bar closes whenever the keyboard hides (tap outside, keyboard dismiss, swipe down, leaving the screen). Any non-empty text is saved first.
-- If the task being edited is completed or deleted (for example by a swipe), the input bar closes **without saving** and the draft is cleared.
 
 ### 3.4 Carry-over (moving unfinished tasks) + counter
 - When the app is active **in planning mode**, today has **≥1 unfinished task**, and the prompt hasn't been shown yet for this logical day, show a **bottom sheet**:
@@ -144,7 +143,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | List top | ~24pt gap below the header |
 | Header | One line, 15pt, grey `#8E8E93`: `Today · Tue 29 Sep` and `Tomorrow · Wed 30 Sep` as two tappable labels (logical dates). The Tomorrow label is shown **only in planning mode**. The selected label is black and medium weight. The gear icon (18pt, grey) sits on the right. Follow safe areas. |
 | FAB | 56pt white circle, bottom-left (16pt from edges, above the safe area), shadow (opacity 0.15, radius 8, offset y 2), black "+" 24pt |
-| Undo button | Round, 56pt, bottom-right (16pt from the edges, above the safe area), `#1C1C1E`, white text `Undo` 15pt semibold, centred, no icon. A white 3pt countdown ring empties over 3s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
+| Undo button | Round, 64pt, bottom center (level with the + FAB, above the safe area), `#1C1C1E`, white text `Undo` 15pt semibold, centred, no icon. A white 3pt countdown ring empties over 3s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
 | Carry-over sheet | White bottom sheet with a rounded top (16pt), a simple checkbox list, and full-width black `Move` and grey text `Skip` buttons |
@@ -203,7 +202,7 @@ src/
     useDayClock.ts     # AppState listener + timers to next E and next P → rollover / mode refresh
   components/
     Header.tsx
-    TaskRow.tsx        # swipe right → complete; tap → edit; shows ×N
+    TaskRow.tsx        # swipe right → complete; tap does nothing; shows ×N
     UndoPill.tsx
     AddFab.tsx
     InputBar.tsx
@@ -247,7 +246,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 1. **Scaffold:** `npx create-expo-app@latest one-day-todo` (TypeScript + Expo Router template); `git init`; push to a private GitHub repo; set `userInterfaceStyle: light`; run in Expo Go.
 2. **Data layer:** SQLite schema, repos, and the Zustand store; add/list/delete working.
 3. **Main screen UI:** header, rows (pixel-matched to the spec), FAB, input bar, empty state.
-4. **Complete flow:** swipe right, the Undo pill, commit logic, haptic, fade-out; tap to edit.
+4. **Complete flow:** swipe right, the Undo pill, commit logic, haptic, fade-out.
 5. **Day logic:** `dates.ts` (logical day, E/P), `rollover.ts`, the `useDayClock` hook; unit tests.
 6. **Carry-over sheet**, the counter, and the fallback link.
 7. **Settings modal** and notifications.
@@ -283,7 +282,7 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 |---|---|
 | Day ends at a configurable time (default 04:00) instead of midnight | **Accepted** |
 | Morning catch-up for unreviewed leftovers | **Rejected**: unfinished tasks are deleted at day end if not moved |
-| Safer completion (swipe + Undo pill) | **Accepted**: tap now edits |
+| Safer completion (swipe + Undo pill) | **Accepted**. Tap-to-edit was later removed: tasks can't be edited (v4) |
 | Carry-over counter (×N, unchecked at ≥3) | **Accepted** |
 | Daily "N done" progress line | **Rejected**: "done and forget" |
 | Store/dev build | **Postponed**. Code backup via git/GitHub |
