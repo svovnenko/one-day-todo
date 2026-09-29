@@ -33,7 +33,6 @@
         }
       ],
       "expo-sqlite",
-      "expo-sharing",
       "@react-native-community/datetimepicker"
     ],
     "experiments": {

@@ -55,14 +55,3 @@ export function setReminderEnabled(enabled: boolean): void {
 export function setLastCarryPromptDate(dayKey: string): void {
   setRaw('lastCarryPromptDate', dayKey);
 }
-
-/** Overwrites schedule + reminder settings in one go (used by backup import). */
-export function replaceScheduleSettings(settings: {
-  planningTime: string;
-  dayEndTime: string;
-  reminderEnabled: boolean;
-}): void {
-  setRaw('planningTime', settings.planningTime);
-  setRaw('dayEndTime', settings.dayEndTime);
-  setRaw('reminderEnabled', settings.reminderEnabled ? '1' : '0');
-}

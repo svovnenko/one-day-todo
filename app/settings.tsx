@@ -1,9 +1,7 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { pickBackupJson, validateBackup } from '@/logic/backup';
 import { formatHHMM, parseHHMM, planningRightAfterDayEndHint } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout } from '@/theme';
@@ -22,53 +20,6 @@ function dateToTime(d: Date): string {
 export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateSchedule = useAppStore((s) => s.updateSchedule);
-  const exportBackup = useAppStore((s) => s.exportBackup);
-  const importBackup = useAppStore((s) => s.importBackup);
-  const [exporting, setExporting] = useState(false);
-  const [importing, setImporting] = useState(false);
-
-  async function handleExport() {
-    setExporting(true);
-    try {
-      await exportBackup();
-    } catch (error) {
-      Alert.alert('Couldn’t export backup', error instanceof Error ? error.message : String(error));
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function handleImport() {
-    setImporting(true);
-    try {
-      const json = await pickBackupJson();
-      if (json === null) return; // user cancelled the picker
-
-      const backup = validateBackup(json);
-      if (!backup) {
-        Alert.alert('This file is not a valid backup.');
-        return;
-      }
-
-      Alert.alert('Replace current tasks and settings with this backup?', undefined, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Replace',
-          style: 'destructive',
-          onPress: () => {
-            const skippedCount = importBackup(backup);
-            if (skippedCount > 0) {
-              Alert.alert('Backup restored', `${skippedCount} old ${skippedCount === 1 ? 'task was' : 'tasks were'} skipped.`);
-            }
-          },
-        },
-      ]);
-    } catch (error) {
-      Alert.alert('This file is not a valid backup.');
-    } finally {
-      setImporting(false);
-    }
-  }
 
   function commitTime(field: 'planningTime' | 'dayEndTime', hhmm: string) {
     const other = field === 'planningTime' ? settings.dayEndTime : settings.planningTime;
@@ -146,19 +97,6 @@ export default function SettingsScreen() {
               onValueChange={(value) => updateSchedule({ reminderEnabled: value })}
             />
           </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Backup</Text>
-        <View style={styles.group}>
-          <Pressable style={styles.row} onPress={handleExport} disabled={exporting}>
-            <Text style={styles.rowLabel}>Export backup</Text>
-            {exporting ? <ActivityIndicator /> : null}
-          </Pressable>
-          <View style={styles.divider} />
-          <Pressable style={styles.row} onPress={handleImport} disabled={importing}>
-            <Text style={styles.rowLabel}>Import backup</Text>
-            {importing ? <ActivityIndicator /> : null}
-          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>

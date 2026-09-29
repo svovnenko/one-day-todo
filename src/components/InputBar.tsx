@@ -9,7 +9,11 @@ type Props = {
   onSubmit: () => void;
 };
 
-/** Spec 3.3 / 4: docked above the keyboard, white, 1px top border, Return keeps the keyboard open. */
+/**
+ * Spec 3.3 / 4: docked above the keyboard, white, 1px top border, Return
+ * keeps the keyboard open. The keyboard starts lowercase (autoCapitalize
+ * "none") for both adding and editing; text is saved exactly as typed.
+ */
 export const InputBar = forwardRef<TextInput, Props>(function InputBar({ value, onChangeText, onSubmit }, ref) {
   return (
     <View style={styles.bar}>
@@ -24,6 +28,7 @@ export const InputBar = forwardRef<TextInput, Props>(function InputBar({ value, 
         blurOnSubmit={false}
         onSubmitEditing={onSubmit}
         maxLength={200}
+        autoCapitalize="none"
       />
     </View>
   );

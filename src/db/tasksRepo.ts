@@ -108,30 +108,3 @@ export function purgeBefore(dayKey: string): number {
   const result = getDb().runSync('DELETE FROM tasks WHERE day < ?', dayKey);
   return result.changes;
 }
-
-export type ImportedTask = {
-  text: string;
-  day: string;
-  position: number;
-  carryCount: number;
-};
-
-/** Deletes every task and inserts the given list, all in one transaction (backup import). */
-export function replaceAll(tasks: ImportedTask[]): void {
-  const db = getDb();
-  db.withTransactionSync(() => {
-    db.runSync('DELETE FROM tasks');
-    const now = Date.now();
-    for (const t of tasks) {
-      db.runSync(
-        'INSERT INTO tasks (id, text, day, position, carry_count, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        Crypto.randomUUID(),
-        t.text,
-        t.day,
-        t.position,
-        t.carryCount,
-        now
-      );
-    }
-  });
-}

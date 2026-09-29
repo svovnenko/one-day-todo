@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import Swipeable, { SwipeDirection, type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import type { Task } from '@/db/tasksRepo';
 import { colors, layout, type } from '@/theme';
@@ -29,6 +29,10 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
   function handleFullSwipe() {
     if (isCompleting) return;
     setIsCompleting(true);
+    // Safety net: the row must never stay open. It's about to fade out
+    // anyway, but snap it back to closed right away rather than leaving it
+    // resting on the revealed grey/checkmark zone during the strike-through.
+    swipeableRef.current?.close();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setTimeout(() => {
       Animated.timing(opacity, {
@@ -52,11 +56,11 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
           <Text style={styles.checkmark}>✓</Text>
         </View>
       )}
-      onSwipeableOpen={(direction) => {
-        if (direction === SwipeDirection.LEFT) {
-          handleFullSwipe();
-        }
-      }}>
+      // Only left actions exist (spec: swipe right to complete), so any
+      // "open" event -- regardless of the reported direction -- means the
+      // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
+      // for a rightward drag that opens the left action panel, not LEFT.)
+      onSwipeableOpen={() => handleFullSwipe()}>
       <Animated.View style={{ opacity }}>
         <Pressable style={styles.row} onPress={() => !isCompleting && onEdit(task)}>
           <Text style={[styles.text, isCompleting && styles.textCompleting]} numberOfLines={1}>

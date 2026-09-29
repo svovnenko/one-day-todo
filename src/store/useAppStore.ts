@@ -2,12 +2,13 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
-import { type BackupFile, buildExport, exportBackupFile } from '@/logic/backup';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
+import { resolveView } from '@/logic/viewLock';
 
 export type View = 'today' | 'tomorrow';
+export type Mode = 'day' | 'planning';
 
 const UNDO_WINDOW_MS = 4000;
 
@@ -28,8 +29,8 @@ type AppState = {
   /** Logical-date keys ('YYYY-MM-DD') for the two lists currently shown. */
   todayDay: string;
   tomorrowDay: string;
-  /** Whether we're currently in day mode or planning mode (spec 3.1); independent of selectedView, which the user can override manually. */
-  mode: 'day' | 'planning';
+  /** Tomorrow is locked (and hidden/unwritable) in day mode -- spec 3.1. Independent of selectedView, which the user can override manually only in planning mode. */
+  mode: Mode;
   todayTasks: tasksRepo.Task[];
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
@@ -41,6 +42,7 @@ type AppState = {
   init: () => void;
   /** Re-reads today/tomorrow's tasks from SQLite into state. */
   refreshTasks: () => void;
+  /** In day mode, a 'tomorrow' target is redirected to today -- Tomorrow doesn't exist yet (spec 3.1). */
   addTask: (view: View, text: string) => void;
   /** Saving empty text completes (deletes-with-undo) the task instead (spec 3.2). */
   editTask: (id: string, text: string) => void;
@@ -50,6 +52,7 @@ type AppState = {
   undoPending: () => void;
   /** Permanently deletes whatever is pending (called on timeout or explicitly). */
   commitPendingUndo: () => void;
+  /** Ignored for 'tomorrow' while in day mode -- Tomorrow can't be selected before planning time (spec 3.1). */
   setSelectedView: (view: View) => void;
   /**
    * Day-end rollover (spec 3.5): commits any pending undo first, deletes
@@ -78,15 +81,6 @@ type AppState = {
    * cancels) the daily reminder notification (spec 3.6).
    */
   updateSchedule: (partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>) => void;
-  /** Spec 3.8: builds the export JSON (excluding any pending-undo task) and opens the share sheet. */
-  exportBackup: () => Promise<void>;
-  /**
-   * Spec 3.8: replaces all tasks + schedule settings from a validated
-   * backup, then runs the rollover (which drops tasks from days before
-   * today per the normal rule). Returns how many tasks were dropped that
-   * way, so the caller can show "N old tasks were skipped."
-   */
-  importBackup: (backup: BackupFile) => number;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
@@ -125,8 +119,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   addTask: (view, text) => {
     const trimmed = sanitizeTaskText(text);
     if (!trimmed) return;
-    const { todayDay, tomorrowDay } = get();
-    tasksRepo.add(view === 'today' ? todayDay : tomorrowDay, trimmed);
+    const { todayDay, tomorrowDay, mode } = get();
+    const effectiveView = resolveView(view, mode);
+    tasksRepo.add(effectiveView === 'today' ? todayDay : tomorrowDay, trimmed);
     get().refreshTasks();
   },
 
@@ -166,7 +161,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refreshTasks();
   },
 
-  setSelectedView: (view) => set({ selectedView: view }),
+  setSelectedView: (view) => set({ selectedView: resolveView(view, get().mode) }),
 
   runRollover: () => {
     get().commitPendingUndo(); // spec 3.5: commit a pending completion before purging
@@ -225,37 +220,5 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings });
     get().runRollover(); // spec 3.6: recompute the mode immediately
     applyReminderSchedule(settings).catch(() => {});
-  },
-
-  exportBackup: async () => {
-    const { settings, todayDay, todayTasks, tomorrowTasks, pendingUndo } = get();
-    const excludeId = pendingUndo?.task.id;
-    const tasks = [...todayTasks, ...tomorrowTasks]
-      .filter((t) => t.id !== excludeId)
-      .map((t) => ({ text: t.text, day: t.day, position: t.position, carryCount: t.carryCount }));
-    const payload = buildExport(
-      new Date(),
-      {
-        planningTime: settings.planningTime,
-        dayEndTime: settings.dayEndTime,
-        reminderEnabled: settings.reminderEnabled,
-      },
-      tasks
-    );
-    await exportBackupFile(payload, todayDay);
-  },
-
-  importBackup: (backup) => {
-    tasksRepo.replaceAll(backup.tasks);
-    settingsRepo.replaceScheduleSettings(backup.settings);
-    const settings = { ...get().settings, ...backup.settings };
-    set({ settings });
-
-    const { todayDay } = planRollover(new Date(), settings);
-    const skippedCount = backup.tasks.filter((t) => t.day < todayDay).length;
-
-    get().runRollover();
-    applyReminderSchedule(settings).catch(() => {});
-    return skippedCount;
   },
 }));

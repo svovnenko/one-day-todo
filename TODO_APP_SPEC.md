@@ -1,6 +1,6 @@
 # One-Day To-Do — Product & Technical Spec
 
-> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v2, after the business-analyst review).
+> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v3: after the business-analyst review and the first device test).
 > Build exactly this; anything not listed is out of scope. When in doubt, choose the simpler option.
 
 ---
@@ -13,7 +13,6 @@ A minimal "paper notepad" to-do app for iPhone. It holds **one day at a time**:
 - **Swipe right** on a task to complete it. It is struck through and removed, and a short **Undo** pill appears. After that it is permanently deleted, with no history ("done and forget").
 - At a configurable **planning time** (default **20:00**) the app switches to **Tomorrow** so you can plan the next day, and offers to **move unfinished tasks** there. Tasks that keep getting moved show a small **carry-over counter** (×2, ×3…).
 - At a configurable **day-end time** (default **04:00**, not midnight, so a late night still counts as today), whatever is left of today is **permanently deleted**. Tomorrow becomes Today.
-- **Manual backup:** export and import a JSON file through the iOS share sheet, from Settings.
 - No details, no priorities, no due times, no recurring tasks, no timers, no history, no stats, no accounts.
 
 The target user is the owner only (single user, a personal app).
@@ -37,7 +36,6 @@ The target user is the owner only (single user, a personal app).
 | Gestures | `react-native-gesture-handler` `ReanimatedSwipeable` + `react-native-reanimated` | Swipe-to-complete; both are included in Expo Go |
 | Notifications | **expo-notifications**, local only | Daily "plan tomorrow" reminder |
 | Time picker | `@react-native-community/datetimepicker` | Included in Expo Go |
-| Backup | `expo-file-system` + `expo-sharing` (export), `expo-document-picker` (import) | All work in Expo Go; no server |
 | Haptics | `expo-haptics` | Light tap on complete |
 | Backend / cloud | **None** | |
 | UI language | **English only** | No i18n library |
@@ -46,8 +44,8 @@ The target user is the owner only (single user, a personal app).
 **Hard rule:** install packages only with `npx expo install <pkg>`, and only packages that run in Expo Go. **Do not** use MMKV, Realm, or any library that needs a custom dev client.
 
 **Known limitations (accepted by the owner):**
-- Data lives inside Expo Go's sandbox, so deleting Expo Go deletes the tasks. The **JSON export** is the mitigation, and it is also how to migrate to a future store build.
-- A new Expo Go release may need the project to be upgraded (`npx expo install expo@latest && npx expo install --fix`) before it opens again. Export a backup before any upgrade.
+- Data lives inside Expo Go's sandbox, so deleting Expo Go deletes the tasks. A future store build starts empty. **No task backup**: completed and expired tasks are permanent by design (owner decision, v3).
+- A new Expo Go release may need the project to be upgraded (`npx expo install expo@latest && npx expo install --fix`) before it opens again.
 
 ### 2.1 Backup of the app itself (code)
 - Put the project in **git** from the first commit and push it to a **private GitHub repository**. That is the backup of the app itself.
@@ -67,7 +65,8 @@ The target user is the owner only (single user, a personal app).
 - **Day mode** when `offset(now) < offset(P)`: the default view is **Today**.
 - **Planning mode** when `offset(now) >= offset(P)`, i.e. from P until E, across midnight: the default view is **Tomorrow**. Today is still reachable through the header toggle.
 - **Validation in Settings:** P must be different from E. Any P is otherwise allowed, because the offset math handles wrap-around. Picking P right after E shows the hint "Planning time is right after day end". It is not blocked.
-- The header toggle is **always visible**. The user can switch views manually at any time. When the app becomes active or crosses P or E, the view resets to the mode default.
+- **Tomorrow is locked in day mode** (changed after the first device test). Before P, only **Today** exists for the user: the header shows only the `Today · …` label, and nothing (tap, store action, add) can select or write to Tomorrow.
+- In **planning mode** both labels are shown, and the user can switch between Today and Tomorrow freely. When the app becomes active or crosses P or E, the view resets to the mode default.
 
 ### 3.2 Tasks
 - A task is **text only** (single line, trimmed, 1–200 chars; empty input is ignored).
@@ -84,6 +83,7 @@ The target user is the owner only (single user, a personal app).
 ### 3.3 Adding (input)
 - A **floating round button** sits at the bottom-left: a white circle with a soft shadow and a **"+"** icon (replaces the ↓ button in the reference screenshot).
 - Tapping it opens a **text input bar docked above the keyboard** (placeholder: `New task`).
+- The keyboard starts in **lowercase** (`autoCapitalize="none"`) for both adding and editing. The text is saved exactly as typed.
 - **Return** adds the task, clears the field, and **keeps the keyboard open** for fast entry of several lines.
 - Tapping outside the field or pressing the keyboard dismiss closes the input. Any non-empty text is saved first.
 
@@ -116,9 +116,6 @@ A **small grey gear icon** in the top-right corner opens a simple grouped list:
   - `Planning time`: a time picker (default **20:00**)
   - `Day ends at`: a time picker (default **04:00**), with the caption: "Tasks left after this time are deleted."
   - `Daily reminder`: an on/off switch (default **on**)
-- **Backup**
-  - `Export backup`: see 3.8
-  - `Import backup`: see 3.8
 
 Changing any time setting reschedules the notification immediately and recomputes the mode.
 
@@ -128,22 +125,6 @@ Changing any time setting reschedules the notification immediately and recompute
 - Use a daily trigger (`{ type: SchedulableTriggerInputTypes.DAILY, hour, minute }`). Cancel all scheduled notifications and reschedule whenever the settings change.
 - Tapping the notification opens the app in planning mode, so the carry-over sheet appears when it applies.
 
-### 3.8 Backup (export / import)
-- **Export:** build the JSON below, write it to `FileSystem.cacheDirectory` as `one-day-todo-YYYY-MM-DD.json`, then open the **iOS share sheet** (`Sharing.shareAsync`) so the user can save it to Files or iCloud Drive, AirDrop it, or send it by mail.
-  ```json
-  {
-    "app": "one-day-todo",
-    "version": 1,
-    "exportedAt": "2026-09-29T21:14:00+03:00",
-    "settings": { "planningTime": "20:00", "dayEndTime": "04:00", "reminderEnabled": true },
-    "tasks": [ { "text": "Call bank", "day": "2026-09-30", "position": 1, "carryCount": 2 } ]
-  }
-  ```
-  Tasks that are pending undo are excluded.
-- **Import:** use `DocumentPicker.getDocumentAsync({ type: 'application/json' })`, read the file, and validate it (`app` and `version`, field types, text length). An invalid file shows the alert "This file is not a valid backup." and changes nothing.
-  - Then confirm with an alert: `Replace current tasks and settings with this backup?` → `Replace` or `Cancel`.
-  - On Replace: in one SQLite transaction, delete all tasks, insert the backup's tasks, and write the settings. Then run the rollover. Tasks from days before today are dropped by the normal rule, and the alert says so: "N old tasks were skipped."
-- This is also the **migration path** to a future store build: export from Expo Go, then import in the new app.
 
 ---
 
@@ -160,7 +141,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | Row | Height ≈ **38pt**, left/right padding **16pt**, **no separators, no checkboxes, no icons** |
 | Swipe | Swipe right reveals a plain light-grey `#F2F2F7` background behind the row with a thin grey checkmark; a full swipe completes. No colored action buttons. |
 | List top | ~24pt gap below the header |
-| Header | One line, 15pt, grey `#8E8E93`: `Today · Tue 29 Sep` and `Tomorrow · Wed 30 Sep` as two tappable labels (logical dates). The selected label is black and medium weight. The gear icon (18pt, grey) sits on the right. Follow safe areas. |
+| Header | One line, 15pt, grey `#8E8E93`: `Today · Tue 29 Sep` and `Tomorrow · Wed 30 Sep` as two tappable labels (logical dates). The Tomorrow label is shown **only in planning mode**. The selected label is black and medium weight. The gear icon (18pt, grey) sits on the right. Follow safe areas. |
 | FAB | 56pt white circle, bottom-left (16pt from edges, above the safe area), shadow (opacity 0.15, radius 8, offset y 2), black "+" 24pt |
 | Undo pill | Bottom center, 44pt tall, `#1C1C1E` background, white 15pt text `Done · Undo`, slides up and fades out |
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
@@ -204,7 +185,7 @@ CREATE TABLE IF NOT EXISTS settings (
 app/
   _layout.tsx          # Stack + GestureHandlerRootView; runs init (db, rollover, notifications) before rendering
   index.tsx            # Main list screen (header, list, FAB, input bar, undo pill, carry-over sheet)
-  settings.tsx         # Modal: schedule + backup
+  settings.tsx         # Modal: schedule
 src/
   db/
     database.ts        # open db, migrations
@@ -217,7 +198,6 @@ src/
     rollover.ts        # runRollover(): commit pending undo, purgeBefore(today), recompute mode
     carryOver.ts       # shouldShowCarryPrompt(), defaultChecked(task), moveTasks(ids)
     notifications.ts   # requestPermission(), scheduleDailyReminder(P), cancelAll()
-    backup.ts          # buildExport(), validateImport(json), applyImport()
   hooks/
     useDayClock.ts     # AppState listener + timers to next E and next P → rollover / mode refresh
   components/
@@ -243,7 +223,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 3 | Swipe right, then tap Undo | The task returns to its original position |
 | 4 | Complete task A, then task B within 4s | A is committed (deleted); the pill now refers to B |
 | 5 | Tap a task, change the text, save | The text is updated; nothing is completed |
-| 6 | Open the app at 14:00 | Today is selected |
+| 6 | Open the app at 14:00 | Today is selected; there is **no Tomorrow label** and no way to reach Tomorrow |
 | 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 checked tasks |
 | 8 | Move a task that has `carry_count` 0 | It appears in Tomorrow as `Task ×1` |
 | 9 | A task with ×3 appears in the carry-over sheet | It is unchecked by default |
@@ -252,11 +232,12 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 12 | Open the app at 04:10 | The old today's tasks are gone; the former Tomorrow is now Today; day mode |
 | 13 | Keep the app open across 04:00 | The list rolls over without a restart |
 | 14 | Change P to 21:30 and E to 05:00 | The notification is rescheduled; the mode and rollover use the new times |
-| 15 | Export, delete a few tasks, then import the file | The tasks and settings are restored; old-day tasks are skipped with a message |
-| 16 | Import a random non-backup JSON file | The alert "not a valid backup" appears; nothing changes |
 | 17 | Deny notification permission | The app works; no crash |
 | 18 | iOS dark mode is on | The app is still white |
 | 19 | Unit tests for `dates.ts` | Cover E/P boundaries (03:59/04:00, 19:59/20:00), P after midnight, month/year rollover, DST change days |
+| 20 | Swipe a row right past the threshold and release | The row completes (strike-through, collapse, Undo pill). It **never** stays open showing the grey zone and checkmark. |
+| 21 | Swipe a row a little and release | The row snaps back closed |
+| 22 | Tap + and type `buy milk` | The first letter stays lowercase |
 
 ---
 
@@ -269,7 +250,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 5. **Day logic:** `dates.ts` (logical day, E/P), `rollover.ts`, the `useDayClock` hook; unit tests.
 6. **Carry-over sheet**, the counter, and the fallback link.
 7. **Settings modal** and notifications.
-8. **Backup** export/import.
+8. ~~Backup export/import~~ (removed in v3).
 9. **Polish and test** on the iPhone against section 7.
 10. *(Later, postponed)* EAS store build or development build.
 
@@ -283,7 +264,7 @@ Commit and push after each milestone.
 npx create-expo-app@latest one-day-todo
 ```
 ```bash
-npx expo install expo-sqlite expo-notifications expo-haptics expo-crypto expo-file-system expo-sharing expo-document-picker react-native-gesture-handler react-native-reanimated @react-native-community/datetimepicker
+npx expo install expo-sqlite expo-notifications expo-haptics expo-crypto react-native-gesture-handler react-native-reanimated @react-native-community/datetimepicker
 ```
 ```bash
 npm install zustand
@@ -304,10 +285,11 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Safer completion (swipe + Undo pill) | **Accepted**: tap now edits |
 | Carry-over counter (×N, unchecked at ≥3) | **Accepted** |
 | Daily "N done" progress line | **Rejected**: "done and forget" |
-| Store/dev build | **Postponed**. Backup is needed now → JSON export/import + git/GitHub for the code |
+| Store/dev build | **Postponed**. Code backup via git/GitHub |
+| Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo pill (4s) |
 | Home/lock screen widget | **Rejected** |
 | Soft task-limit hint | **Rejected** |
 
 ## 11. Out of scope (do NOT build)
 
-Accounts or login, cloud sync, automatic backup, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, dark mode, localization, iPad layout, a morning catch-up prompt.
+Accounts or login, cloud sync, any task backup or export/import, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, dark mode, localization, iPad layout, a morning catch-up prompt.

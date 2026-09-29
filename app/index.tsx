@@ -126,6 +126,7 @@ export default function HomeScreen() {
           todayLabel={todayLabel}
           tomorrowLabel={tomorrowLabel}
           selectedView={selectedView}
+          mode={mode}
           onSelectView={setSelectedView}
           onPressSettings={() => router.push('/settings')}
         />
