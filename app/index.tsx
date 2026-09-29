@@ -1,13 +1,9 @@
-import * as Haptics from 'expo-haptics';
-import { useIsFocused, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  AppState,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
-  LayoutChangeEvent,
   ListRenderItemInfo,
   Platform,
   Pressable,
@@ -34,12 +30,13 @@ import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
 import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
 import type { Task } from '@/db/tasksRepo';
+import { useAutoScroll } from '@/hooks/useAutoScroll';
+import { useCarrySheetReveal } from '@/hooks/useCarrySheetReveal';
 import { useDayClock } from '@/hooks/useDayClock';
-import { movableTaskCount } from '@/logic/carryOver';
+import { useFooterLines } from '@/hooks/useFooterLines';
+import { useInputSession } from '@/hooks/useInputSession';
 import { excludeCompleting, visibleTasks } from '@/logic/completion';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
-import { footerLines } from '@/logic/footer';
-import { isListFull } from '@/logic/limits';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
@@ -57,30 +54,21 @@ export default function HomeScreen() {
   const completion = useAppStore((s) => s.completion);
   const restoreVersion = useAppStore((s) => s.restoreVersion);
   const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
-  const carryPromptDue = useAppStore((s) => s.carryPromptDue);
   const init = useAppStore((s) => s.init);
-  const addTask = useAppStore((s) => s.addTask);
   const beginComplete = useAppStore((s) => s.beginComplete);
   const markHidden = useAppStore((s) => s.markHidden);
   const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
   const openCarrySheet = useAppStore((s) => s.openCarrySheet);
-  const showCarrySheetIfDue = useAppStore((s) => s.showCarrySheetIfDue);
   const hideCarrySheet = useAppStore((s) => s.hideCarrySheet);
   const skipCarrySheet = useAppStore((s) => s.skipCarrySheet);
   const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
 
   const router = useRouter();
-  const [inputVisible, setInputVisible] = useState(false);
-  // Spec 3.3 (auto-scroll): set right after a successful add, consumed
-  // by the FlatList's onContentSizeChange below. listAreaHeightRef tracks
-  // the list container's OWN layout height (via its onLayout), which
-  // already shrinks when KeyboardAvoidingView makes room for the keyboard
-  // -- so the "is the content taller than what's visible" check below
-  // naturally accounts for the keyboard/input bar without any extra logic.
   const listRef = useRef<FlatList<Task>>(null);
-  const scrollToNewPendingRef = useRef(false);
-  const listAreaHeightRef = useRef(0);
+  const { handleListAreaLayout, handleContentSizeChange, flagScrollToEnd } = useAutoScroll(listRef);
+  const { inputVisible, isCurrentListFull, handleAdd, handleInputClose, handleFabPress } =
+    useInputSession(flagScrollToEnd);
 
   useEffect(() => {
     // OPT-01: never leave the app stuck on the native splash screen if
@@ -107,96 +95,7 @@ export default function HomeScreen() {
   // app runs: AppState-active, and timers to the next day-end/planning time.
   useDayClock();
 
-  // TASK_FIXES_03: evaluateCarryPrompt (run from runRollover/refreshMode)
-  // only marks carryPromptDue -- it never shows the sheet itself, even if
-  // that happens while Settings is open or an AppState transition is in
-  // flight. Only this screen decides to actually reveal it, and only once
-  // it's both focused (e.g. back from Settings) and the app is active.
-  // Re-checks whenever carryPromptDue or focus changes, and again on every
-  // AppState transition (covers "backgrounded, tap the notification").
-  const isFocused = useIsFocused();
-  useEffect(() => {
-    function tryReveal() {
-      if (carryPromptDue && isFocused && AppState.currentState === 'active') {
-        showCarrySheetIfDue();
-      }
-    }
-    tryReveal();
-    const subscription = AppState.addEventListener('change', tryReveal);
-    return () => subscription.remove();
-  }, [carryPromptDue, isFocused, showCarrySheetIfDue]);
-
-  /**
-   * Tries to add `text` to whichever list is currently selected (read live
-   * from the store, same reasoning as before this task: InputBar never
-   * re-renders on unrelated updates, so a closed-over `selectedView` could
-   * be stale). Returns whether the input bar should stay open: false both
-   * when the list was already full (the store refused, or our own
-   * pre-check caught it -- either way the draft is discarded per spec
-   * 3.2 v7, with a warning haptic and no text) and when this add was the
-   * one that just reached the limit (closes the bar too, per spec -- the
-   * footer's "Full -- finish a task to add more" line appears by itself,
-   * since it's derived straight from store state, no separate message
-   * needed). On any real add, flags the next FlatList content-size change
-   * to scroll the new row (and the now-visible footer) into view.
-   */
-  const attemptAdd = useCallback(
-    (text: string): boolean => {
-      const view = useAppStore.getState().selectedView;
-      const countBefore = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
-      if (isListFull(countBefore)) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        return false;
-      }
-      if (!addTask(view, text)) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // safety net -- the store refused despite the pre-check above
-        return false;
-      }
-      scrollToNewPendingRef.current = true;
-      const countAfter = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
-      return !isListFull(countAfter);
-    },
-    [addTask]
-  );
-
-  /** Return, from InputBar: add, and close the bar if that just filled the list. */
-  const handleAdd = useCallback(
-    (text: string) => {
-      if (!attemptAdd(text)) {
-        Keyboard.dismiss();
-        setInputVisible(false);
-      }
-    },
-    [attemptAdd]
-  );
-
-  /** InputBar's keyboard hid: save a non-empty draft (unless the list is full), then close. */
-  const handleInputClose = useCallback(
-    (text: string) => {
-      if (text.trim().length > 0) attemptAdd(text);
-      Keyboard.dismiss(); // formality -- it's normally already hidden, since that's what triggered this
-      setInputVisible(false);
-    },
-    [attemptAdd]
-  );
-
-  const isCurrentListFull = isListFull(selectedView === 'today' ? todayTasks.length : tomorrowTasks.length);
-
-  // AddFab itself handles a tap while full (haptic + shake, no callback) --
-  // this only ever fires when the list has room.
-  const handleFabPress = useCallback(() => setInputVisible(true), []);
-
-  const handleListAreaLayout = useCallback((e: LayoutChangeEvent) => {
-    listAreaHeightRef.current = e.nativeEvent.layout.height;
-  }, []);
-
-  const handleContentSizeChange = useCallback((_width: number, height: number) => {
-    if (!scrollToNewPendingRef.current) return;
-    scrollToNewPendingRef.current = false;
-    if (height > listAreaHeightRef.current) {
-      listRef.current?.scrollToEnd({ animated: true });
-    }
-  }, []);
+  useCarrySheetReveal();
 
   /**
    * This row's own completion animation (strike-through, fade, collapse)
@@ -329,17 +228,11 @@ export default function HomeScreen() {
   const emptyMessage =
     selectedView === 'today' && lastCompletedDate === todayDay ? 'Done for today.' : 'Nothing here. Tap + to add.';
 
-  // Spec 3.2/3.4 v7: up to two lines at the end of the list -- the "list
-  // full" line and the carry-over line/link -- computed by one pure
-  // helper (src/logic/footer.ts) so every combination is unit tested
-  // there instead of re-derived in JSX. hasMovable excludes tasks in the
-  // pending Undo batch, same as the sheet's own `tasks` prop.
-  const tomorrowFull = isListFull(tomorrowTasks.length);
-  const hasMovable = movableTaskCount(todayUnfinishedTasks) > 0;
-  const footerLineList = useMemo(
-    () => footerLines({ view: selectedView, mode, viewedFull: isCurrentListFull, tomorrowFull, hasMovable }),
-    [selectedView, mode, isCurrentListFull, tomorrowFull, hasMovable]
-  );
+  // Spec 3.2/3.4: up to two lines at the end of the list -- the "list
+  // full" line and the carry-over line/link -- computed by useFooterLines
+  // (wrapping the pure footerLines() helper) so every combination is unit
+  // tested there instead of re-derived in JSX.
+  const footerLineList = useFooterLines();
   const footerElement = useMemo(() => {
     if (footerLineList.length === 0) return null;
     return (
