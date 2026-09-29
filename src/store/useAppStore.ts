@@ -39,6 +39,16 @@ type AppState = {
   pendingUndo: PendingUndo | null;
   /** Whether the "Move unfinished to tomorrow?" bottom sheet is showing (spec 3.4). */
   carrySheetVisible: boolean;
+  /**
+   * True when evaluateCarryPrompt's conditions are met but the sheet
+   * hasn't been revealed yet. Kept separate from carrySheetVisible so the
+   * store never presents the sheet itself -- the main screen decides WHEN
+   * to reveal it (only while focused and the app is active), which is
+   * what fixed the freeze in TASK_FIXES_03 (an RN Modal shown while a
+   * native screen transition / AppState transition is in flight could get
+   * stuck as an invisible layer swallowing all touches on iOS).
+   */
+  carryPromptDue: boolean;
 
   /** Opens the DB, loads settings + today/tomorrow's tasks, and picks the default view. */
   init: () => void;
@@ -69,8 +79,12 @@ type AppState = {
    * time P.
    */
   refreshMode: () => void;
-  /** Sets carrySheetVisible if the spec 3.4 conditions are currently met. Called after runRollover/refreshMode. */
+  /** Sets carryPromptDue if the spec 3.4 conditions are currently met. Called after runRollover/refreshMode; doesn't show the sheet itself. */
   evaluateCarryPrompt: () => void;
+  /** Consumes a due prompt and actually reveals the sheet. Called only by the main screen, gated on focus + AppState active. */
+  showCarrySheetIfDue: () => void;
+  /** Unconditionally hides the sheet. Safe to call any time, including as a guaranteed-hide fallback after a failed Skip/Move. */
+  hideCarrySheet: () => void;
   /** Fallback link (spec 3.4): reopens the sheet even if already shown today. */
   openCarrySheet: () => void;
   /** "Skip": marks the prompt as shown for today and closes the sheet. */
@@ -101,6 +115,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedView: 'today',
   pendingUndo: null,
   carrySheetVisible: false,
+  carryPromptDue: false,
 
   init: () => {
     const settings = settingsRepo.getSettings();
@@ -193,23 +208,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   evaluateCarryPrompt: () => {
     const { settings, todayDay, todayTasks } = get();
     const now = new Date();
-    const show = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
-    if (show) set({ carrySheetVisible: true });
+    const due = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
+    if (due) set({ carryPromptDue: true });
   },
+
+  showCarrySheetIfDue: () => {
+    if (get().carryPromptDue) set({ carryPromptDue: false, carrySheetVisible: true });
+  },
+
+  hideCarrySheet: () => set({ carrySheetVisible: false }),
 
   openCarrySheet: () => set({ carrySheetVisible: true }),
 
   skipCarrySheet: () => {
     const { todayDay, settings } = get();
     settingsRepo.setLastCarryPromptDate(todayDay);
-    set({ settings: { ...settings, lastCarryPromptDate: todayDay }, carrySheetVisible: false });
+    set({
+      settings: { ...settings, lastCarryPromptDate: todayDay },
+      carrySheetVisible: false,
+      carryPromptDue: false,
+    });
   },
 
   moveCarryOverTasks: (taskIds) => {
     const { todayDay, tomorrowDay, settings } = get();
     moveTasks(taskIds, todayDay, tomorrowDay);
     settingsRepo.setLastCarryPromptDate(todayDay);
-    set({ settings: { ...settings, lastCarryPromptDate: todayDay }, carrySheetVisible: false });
+    set({
+      settings: { ...settings, lastCarryPromptDate: todayDay },
+      carrySheetVisible: false,
+      carryPromptDue: false,
+    });
     get().refreshTasks();
   },
 

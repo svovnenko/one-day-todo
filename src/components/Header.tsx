@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, type } from '@/theme';
@@ -31,8 +32,8 @@ export function Header({ todayLabel, tomorrowLabel, selectedView, mode, onSelect
           </Pressable>
         ) : null}
       </View>
-      <Pressable onPress={onPressSettings} hitSlop={8} accessibilityLabel="Settings">
-        <Text style={styles.gear}>⚙</Text>
+      <Pressable style={styles.settingsButton} onPress={onPressSettings} accessibilityLabel="Settings">
+        <Ionicons name="settings-outline" size={20} color={colors.muted} />
       </Pressable>
     </View>
   );
@@ -49,5 +50,14 @@ const styles = StyleSheet.create({
   labels: { flexDirection: 'row', gap: 16 },
   label: { fontSize: type.header, color: colors.muted },
   labelActive: { color: colors.text, fontWeight: '500' },
-  gear: { fontSize: 18, color: colors.muted },
+  // 44x44 hit area (Apple's minimum recommended tap target), with the icon
+  // centered inside it. Offsets against the row's own padding so the icon
+  // itself still lines up visually where the old inline glyph sat.
+  settingsButton: {
+    width: 44,
+    height: 44,
+    marginRight: -12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

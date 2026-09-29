@@ -1,6 +1,7 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useIsFocused, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -35,6 +36,7 @@ export default function HomeScreen() {
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
   const pendingUndo = useAppStore((s) => s.pendingUndo);
   const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
+  const carryPromptDue = useAppStore((s) => s.carryPromptDue);
   const init = useAppStore((s) => s.init);
   const addTask = useAppStore((s) => s.addTask);
   const editTask = useAppStore((s) => s.editTask);
@@ -42,6 +44,8 @@ export default function HomeScreen() {
   const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
   const openCarrySheet = useAppStore((s) => s.openCarrySheet);
+  const showCarrySheetIfDue = useAppStore((s) => s.showCarrySheetIfDue);
+  const hideCarrySheet = useAppStore((s) => s.hideCarrySheet);
   const skipCarrySheet = useAppStore((s) => s.skipCarrySheet);
   const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
 
@@ -58,6 +62,25 @@ export default function HomeScreen() {
   // Keeps today/tomorrow and the Today/Tomorrow default in sync while the
   // app runs: AppState-active, and timers to the next day-end/planning time.
   useDayClock();
+
+  // TASK_FIXES_03: evaluateCarryPrompt (run from runRollover/refreshMode)
+  // only marks carryPromptDue -- it never shows the sheet itself, even if
+  // that happens while Settings is open or an AppState transition is in
+  // flight. Only this screen decides to actually reveal it, and only once
+  // it's both focused (e.g. back from Settings) and the app is active.
+  // Re-checks whenever carryPromptDue or focus changes, and again on every
+  // AppState transition (covers "backgrounded, tap the notification").
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    function tryReveal() {
+      if (carryPromptDue && isFocused && AppState.currentState === 'active') {
+        showCarrySheetIfDue();
+      }
+    }
+    tryReveal();
+    const subscription = AppState.addEventListener('change', tryReveal);
+    return () => subscription.remove();
+  }, [carryPromptDue, isFocused, showCarrySheetIfDue]);
 
   // Guards closeInput/cancelInput against firing twice for one open session
   // (e.g. our own Keyboard.dismiss() inside closeInput() also triggers the
@@ -149,15 +172,40 @@ export default function HomeScreen() {
     completeTask(task);
   }
 
+  // Skip, the backdrop tap, and Move must always hide the sheet, even if
+  // the store update itself throws (TASK_FIXES_03) -- hideCarrySheet is a
+  // single, unconditional state set that can't fail the same way.
+  function handleSkipCarrySheet() {
+    try {
+      skipCarrySheet();
+    } finally {
+      hideCarrySheet();
+    }
+  }
+
+  function handleMoveCarryOverTasks(taskIds: string[]) {
+    try {
+      moveCarryOverTasks(taskIds);
+    } finally {
+      hideCarrySheet();
+    }
+  }
+
+  // Stable reference unless todayTasks or the pending task actually change
+  // -- passed to CarryOverSheet, which otherwise has no way to tell "a new
+  // task list" apart from "the same list, re-filtered because the parent
+  // re-rendered for an unrelated reason" (TASK_FIXES_03).
+  const todayUnfinishedTasks = useMemo(
+    () => (pendingUndo ? todayTasks.filter((t) => t.id !== pendingUndo.task.id) : todayTasks),
+    [todayTasks, pendingUndo]
+  );
+
   if (!isReady) {
     return <SafeAreaView style={styles.screen} />;
   }
 
   const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
   const tasks = pendingUndo ? rawTasks.filter((t) => t.id !== pendingUndo.task.id) : rawTasks;
-  const todayUnfinishedTasks = pendingUndo
-    ? todayTasks.filter((t) => t.id !== pendingUndo.task.id)
-    : todayTasks;
   const todayLabel = formatHeaderDate(parseDayKey(todayDay));
   const tomorrowLabel = formatHeaderDate(parseDayKey(tomorrowDay));
   const showFallbackLink = mode === 'planning' && selectedView === 'today';
@@ -210,8 +258,8 @@ export default function HomeScreen() {
       <CarryOverSheet
         visible={carrySheetVisible}
         tasks={todayUnfinishedTasks}
-        onMove={moveCarryOverTasks}
-        onSkip={skipCarrySheet}
+        onMove={handleMoveCarryOverTasks}
+        onSkip={handleSkipCarrySheet}
       />
     </SafeAreaView>
   );
