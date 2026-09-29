@@ -10,18 +10,29 @@ export type CarryOverSettings = {
 
 /**
  * Spec 3.4: show the "move unfinished to tomorrow" sheet when the app is
- * active in planning mode, today has at least one unfinished task, and the
- * prompt hasn't already been shown for this logical day.
+ * active in planning mode, today has at least one MOVABLE unfinished task
+ * (carry_count < MAX_CARRY_COUNT), tomorrow has at least one free slot
+ * (spec 3.4 v7 -- a sheet where nothing can be moved is a dead end), and
+ * the prompt hasn't already been shown for this logical day.
+ *
+ * Skipping for either v7 reason does NOT mark the prompt as shown --
+ * `lastCarryPromptDate` is only ever set by an actual Move/Let-them-go, so
+ * if a Tomorrow slot frees up later that evening, the next evaluation
+ * (the app becoming active, or crossing P) can show the sheet then. This
+ * function is never called reactively on every Tomorrow swipe, only from
+ * the store's existing evaluation points, so it doesn't need to.
  */
 export function shouldShowCarryPrompt(
   now: Date,
   settings: CarryOverSettings,
   todayDayKey: string,
   lastCarryPromptDate: string | null,
-  todayTaskCount: number
+  movableTodayTaskCount: number,
+  tomorrowFreeSlots: number
 ): boolean {
   if (!isPlanningMode(now, settings.planningTime, settings.dayEndTime)) return false;
-  if (todayTaskCount < 1) return false;
+  if (movableTodayTaskCount < 1) return false;
+  if (tomorrowFreeSlots < 1) return false;
   if (lastCarryPromptDate === todayDayKey) return false;
   return true;
 }
@@ -29,6 +40,11 @@ export function shouldShowCarryPrompt(
 /** Spec 3.4 v5: a task moved MAX_CARRY_COUNT times can't be moved again -- it stays in Today. */
 export function isBlockedFromMoving(task: Task): boolean {
   return task.carryCount >= MAX_CARRY_COUNT;
+}
+
+/** How many of `tasks` are still eligible to move (spec 3.4 v7: gates both the prompt and the fallback link). */
+export function movableTaskCount(tasks: Pick<Task, 'carryCount'>[]): number {
+  return tasks.filter((t) => t.carryCount < MAX_CARRY_COUNT).length;
 }
 
 export type CarryOverCandidate = {

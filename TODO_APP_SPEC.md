@@ -1,6 +1,6 @@
 # One-Day To-Do — Product & Technical Spec
 
-> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v6: "Done for today", evening re-commit).
+> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v7: move sheet redesign).
 > Build exactly this; anything not listed is out of scope. When in doubt, choose the simpler option.
 
 ---
@@ -73,8 +73,9 @@ The target user is the owner only (single user, a personal app).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Open-task limit (v5):** each list (Today, Tomorrow) holds at most **10 open tasks**. Tasks in the pending Undo batch still count until the batch commits, so Undo can never push a list over 10. When a list is full:
   - the + FAB is greyed out (40% opacity);
-  - tapping it shows a small grey message above it for 2s: `10 tasks max. Finish one first.`;
-  - if the input bar is open when the 10th task is added, the bar closes and the same message shows.
+  - **no popup or toast of any kind (v7)**. Instead, a grey line `Full — finish a task to add more` (17pt, `#8E8E93`) is shown **as the first footer line at the end of the list**, above the `Move unfinished to tomorrow` link or `Tomorrow is full` text when those are present. Because it's part of the list, it scrolls with it and never overlaps anything;
+  - tapping the faded + gives a **warning haptic** (`Haptics.notificationAsync(Warning)`) and a short horizontal **shake** of the button (about 300ms), and does nothing else;
+  - if the input bar is open when the 10th task is added, the bar closes; the footer line appears.
   - Lists that are already over 10 (older data) are left alone; you just can't add until they drop below 10.
 - **Swipe right** on a task → it completes:
   - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then fades (150ms) and **its height collapses to 0 (about 200ms)**, so the rows below slide up. No empty gap is ever left in the list, including during the Undo window. Undo re-inserts the row at its original position.
@@ -96,17 +97,19 @@ The target user is the owner only (single user, a personal app).
 - The input bar closes whenever the keyboard hides (tap outside, keyboard dismiss, swipe down, leaving the screen). Any non-empty text is saved first.
 
 ### 3.4 Carry-over (moving unfinished tasks) + counter
-- When the app is active **in planning mode**, today has **≥1 unfinished task**, and the prompt hasn't been shown yet for this logical day, show a **bottom sheet**:
+- When the app is active **in planning mode**, today has **≥1 movable unfinished task** (carry_count < 5), **Tomorrow has ≥1 free slot** (v7), and the prompt hasn't been shown yet for this logical day, show a **bottom sheet**:
   - Title: `Move unfinished to tomorrow?`
-  - A list of today's unfinished tasks, each with a checkbox and its counter if it has one.
+  - A list of today's unfinished tasks with their counters. **No checkboxes or circles (v7):** tap a row to select it. A selected row has **black** text and a black `✓` on the right; an unselected row has **grey** `#8E8E93` text.
   - **Evening re-commit (v6, default effect):** **every task starts unchecked.** Moving a task is always a conscious choice. The earlier "unchecked from ×3" nudge is no longer needed.
-  - **Move limit (v5):** a task with `carry_count >= 5` **can't be moved again**. It shows greyed out, with a disabled checkbox and the note `can't move again`. It stays in Today and is deleted at day end if not done.
-  - **Tomorrow's slots (v5):** the sheet shows `Tomorrow: N free` under the title, where N = 10 minus tomorrow's open tasks. At most N tasks can be checked: once N are checked, the other checkboxes are disabled until one is unchecked. If N = 0, `Move` is disabled.
-  - Buttons: `Move` (primary) and `Skip`
+  - **Move limit (v5):** a task with `carry_count >= 5` **can't be moved again**. It shows in faint `#B3B3B3` text with the note `can't move again` on the right and can't be tapped. It stays in Today and is deleted at day end if not done.
+  - **Tomorrow's slots (v5/v7):** N = 10 minus tomorrow's open tasks. The subtitle reads `Choose up to N` when N is smaller than the number of movable tasks; otherwise it reads `Choose what to move`. Once N rows are selected, the other unselected rows turn faint and can't be tapped until one is deselected. When N = 0, the sheet isn't shown at all (see the fallback link).
+  - Buttons: `Move N` (primary; the label includes the number selected, and it's disabled with the label `Move` when nothing is selected) and **`Let them go`** (v7, formerly `Skip`)
 - **Move** transfers the checked tasks: they are deleted from Today and appended to Tomorrow with **`carry_count + 1`**.
   - If a task with the exact same text already exists in Tomorrow, don't duplicate it. Set that existing task's `carry_count = max(existing, moved + 1)`.
-- **Move** and **Skip** both mark the prompt as shown (`lastCarryPromptDate = today`).
-- A fallback: in planning mode, the **Today** view shows a small grey text link at the list end, `Move unfinished to tomorrow`. It reopens the sheet.
+- **Move** and **Let them go** both mark the prompt as shown (`lastCarryPromptDate = today`).
+- A fallback: in planning mode, the **Today** view shows a small grey text link at the list end, `Move unfinished to tomorrow ›` (the chevron marks it as the only tappable footer line). It reopens the sheet.
+  - **When Tomorrow is full (v7):** the same spot shows `Tomorrow is full` in grey, or `Tomorrow is full too` when the `Full — finish a task to add more` line is shown above it. It isn't tappable and has no chevron. Once a slot frees up (a task is completed in Tomorrow), it turns back into the link.
+  - If Today has no movable tasks (all ×5, or none left), no link is shown.
 - **Counter display:** when `carry_count >= 1`, show `×N` after the task text in grey `#B3B3B3`, 13pt, with 6pt spacing. For example `Call bank ×2` means the task was moved twice.
 - **Owner's rule:** if the user never opens the app between P and E, unfinished tasks are **deleted at day end without a prompt**. There is no morning catch-up; this was explicitly rejected.
 
@@ -157,7 +160,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
 | "Done for today" (v6) | In the **Today** view, when the list is empty **and at least one task was completed today** (a batch committed on this logical day), show a centered grey 17pt `Done for today.` instead of the empty state. There is no animation, icon or sound. The Tomorrow view always uses the normal empty state. |
-| Carry-over sheet | White bottom sheet with a rounded top (16pt), a simple checkbox list, and full-width black `Move` and grey text `Skip` buttons |
+| Carry-over sheet | White bottom sheet with a rounded top (16pt). A plain text list: selected rows are black with a `✓` on the right, unselected rows grey, unavailable rows faint; **no checkboxes or circles**. A full-width black `Move N` button and a grey text `Let them go` button. |
 | Dark mode | **Off**: set `"userInterfaceStyle": "light"` in `app.json` |
 
 Date format: `Tue 29 Sep`. Use `Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })`.
@@ -238,7 +241,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 **unchecked** tasks |
 | 8 | Move a task that has `carry_count` 0 | It appears in Tomorrow as `Task ×1` |
 | 9 | A task with ×5 appears in the carry-over sheet | It is greyed out with `can't move again` and can't be checked |
-| 10 | Tap Skip, then reopen the app | The sheet does not reappear; the fallback link is visible in the Today view |
+| 10 | Tap Let them go, then reopen the app | The sheet does not reappear; the fallback link is visible in the Today view |
 | 11 | Open the app at 01:30 (E=04:00) | Still the same logical day: the header shows yesterday's calendar date as "Today"; the lists are unchanged; planning mode |
 | 12 | Open the app at 04:10 | The old today's tasks are gone; the former Tomorrow is now Today; day mode |
 | 13 | Keep the app open across 04:00 | The list rolls over without a restart |
@@ -309,6 +312,7 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Reminder text / 21:00 default | **Rejected (v6)**: keep `Plan tomorrow` / `Write tomorrow's list.` at 20:00 |
 | Streaks, stats, badges, confetti, categories, Pomodoro, morning reminder | **Rejected (v6)**: they break the "empty list is the only reward" spirit |
 | Auto-scroll to a new task | **Accepted (v5)** |
+| Move sheet: text + ✓ selection, no sheet when Tomorrow is full, `Let them go` | **Accepted (v7)** |
 
 ## 11. Out of scope (do NOT build)
 

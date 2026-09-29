@@ -3,10 +3,10 @@ import { create } from 'zustand';
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
 import { BatchUndoScheduler } from '@/logic/batchUndoScheduler';
-import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
+import { movableTaskCount, moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { batchCompletesToday } from '@/logic/completion';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
-import { isListFull } from '@/logic/limits';
+import { freeSlots, isListFull } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
 import { reconcileTaskList } from '@/logic/taskListDiff';
@@ -247,9 +247,16 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     evaluateCarryPrompt: () => {
-      const { settings, todayDay, todayTasks } = get();
+      const { settings, todayDay, todayTasks, tomorrowTasks } = get();
       const now = new Date();
-      const due = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
+      const due = shouldShowCarryPrompt(
+        now,
+        settings,
+        todayDay,
+        settings.lastCarryPromptDate,
+        movableTaskCount(todayTasks),
+        freeSlots(tomorrowTasks.length)
+      );
       if (due) set({ carryPromptDue: true });
     },
 

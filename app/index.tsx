@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useIsFocused, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -34,7 +35,9 @@ import { TaskRow } from '@/components/TaskRow';
 import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
 import type { Task } from '@/db/tasksRepo';
 import { useDayClock } from '@/hooks/useDayClock';
+import { movableTaskCount } from '@/logic/carryOver';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
+import { footerLines } from '@/logic/footer';
 import { isListFull } from '@/logic/limits';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
@@ -76,11 +79,6 @@ export default function HomeScreen() {
   // that's needed instead of trying to reset the row's animated state
   // in place.
   const [restoreCounts, setRestoreCounts] = useState<Record<string, number>>({});
-  // Spec 3.2 v5: shows "10 tasks max. Finish one first." above the FAB for
-  // a couple of seconds -- fired by the FAB, InputBar's Return key, and
-  // the keyboard-hide/draft path, all funneled through showListFullMessage.
-  const [showFullMessage, setShowFullMessage] = useState(false);
-  const fullMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Spec 3.3 v5 (auto-scroll): set right after a successful add, consumed
   // by the FlatList's onContentSizeChange below. listAreaHeightRef tracks
   // the list container's OWN layout height (via its onLayout), which
@@ -135,13 +133,6 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [carryPromptDue, isFocused, showCarrySheetIfDue]);
 
-  // Cleans up the "list full" message's auto-hide timer on unmount.
-  useEffect(() => {
-    return () => {
-      if (fullMessageTimerRef.current) clearTimeout(fullMessageTimerRef.current);
-    };
-  }, []);
-
   // Garbage-collects hiddenRowIds: once a task is actually gone from the
   // store's data (deleted for real, e.g. after the Undo window commits),
   // there's no point remembering it was "visually hidden".
@@ -154,12 +145,6 @@ export default function HomeScreen() {
     });
   }, [todayTasks, tomorrowTasks]);
 
-  const showListFullMessage = useCallback(() => {
-    if (fullMessageTimerRef.current) clearTimeout(fullMessageTimerRef.current);
-    setShowFullMessage(true);
-    fullMessageTimerRef.current = setTimeout(() => setShowFullMessage(false), 2000);
-  }, []);
-
   /**
    * Tries to add `text` to whichever list is currently selected (read live
    * from the store, same reasoning as before this task: InputBar never
@@ -167,31 +152,30 @@ export default function HomeScreen() {
    * be stale). Returns whether the input bar should stay open: false both
    * when the list was already full (the store refused, or our own
    * pre-check caught it -- either way the draft is discarded per spec
-   * 3.2 v5) and when this add was the one that just reached the limit
-   * (closes the bar too, per spec). On any real add, flags the next
-   * FlatList content-size change to scroll the new row into view.
+   * 3.2 v7, with a warning haptic and no text) and when this add was the
+   * one that just reached the limit (closes the bar too, per spec -- the
+   * footer's "Full -- finish a task to add more" line appears by itself,
+   * since it's derived straight from store state, no separate message
+   * needed). On any real add, flags the next FlatList content-size change
+   * to scroll the new row (and the now-visible footer) into view.
    */
   const attemptAdd = useCallback(
     (text: string): boolean => {
       const view = useAppStore.getState().selectedView;
       const countBefore = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
       if (isListFull(countBefore)) {
-        showListFullMessage();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
         return false;
       }
       if (!addTask(view, text)) {
-        showListFullMessage(); // safety net -- the store refused despite the pre-check above
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // safety net -- the store refused despite the pre-check above
         return false;
       }
       scrollToNewPendingRef.current = true;
       const countAfter = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
-      if (isListFull(countAfter)) {
-        showListFullMessage();
-        return false;
-      }
-      return true;
+      return !isListFull(countAfter);
     },
-    [addTask, showListFullMessage]
+    [addTask]
   );
 
   /** Return, from InputBar: add, and close the bar if that just filled the list. */
@@ -217,13 +201,9 @@ export default function HomeScreen() {
 
   const isCurrentListFull = isListFull(selectedView === 'today' ? todayTasks.length : tomorrowTasks.length);
 
-  const handleFabPress = useCallback(() => {
-    if (isCurrentListFull) {
-      showListFullMessage();
-      return;
-    }
-    setInputVisible(true);
-  }, [isCurrentListFull, showListFullMessage]);
+  // AddFab itself handles a tap while full (haptic + shake, no callback) --
+  // this only ever fires when the list has room.
+  const handleFabPress = useCallback(() => setInputVisible(true), []);
 
   const handleListAreaLayout = useCallback((e: LayoutChangeEvent) => {
     listAreaHeightRef.current = e.nativeEvent.layout.height;
@@ -402,16 +382,35 @@ export default function HomeScreen() {
   const emptyMessage =
     selectedView === 'today' && lastCompletedDate === todayDay ? 'Done for today.' : 'Nothing here. Tap + to add.';
 
-  const showFallbackLink = mode === 'planning' && selectedView === 'today';
-  const footerElement = useMemo(
-    () =>
-      showFallbackLink ? (
-        <Pressable style={styles.fallbackLink} onPress={openCarrySheet}>
-          <Text style={styles.fallbackLinkText}>Move unfinished to tomorrow</Text>
-        </Pressable>
-      ) : null,
-    [showFallbackLink, openCarrySheet]
+  // Spec 3.2/3.4 v7: up to two lines at the end of the list -- the "list
+  // full" line and the carry-over line/link -- computed by one pure
+  // helper (src/logic/footer.ts) so every combination is unit tested
+  // there instead of re-derived in JSX. hasMovable excludes tasks in the
+  // pending Undo batch, same as the sheet's own `tasks` prop.
+  const tomorrowFull = isListFull(tomorrowTasks.length);
+  const hasMovable = movableTaskCount(todayUnfinishedTasks) > 0;
+  const footerLineList = useMemo(
+    () => footerLines({ view: selectedView, mode, viewedFull: isCurrentListFull, tomorrowFull, hasMovable }),
+    [selectedView, mode, isCurrentListFull, tomorrowFull, hasMovable]
   );
+  const footerElement = useMemo(() => {
+    if (footerLineList.length === 0) return null;
+    return (
+      <View>
+        {footerLineList.map((line) =>
+          line.tappable ? (
+            <Pressable key={line.text} style={styles.fallbackLink} onPress={openCarrySheet}>
+              <Text style={styles.fallbackLinkText}>{line.text}</Text>
+            </Pressable>
+          ) : (
+            <View key={line.text} style={styles.fallbackLink}>
+              <Text style={line.kind === 'full' ? styles.fullLineText : styles.fallbackLinkText}>{line.text}</Text>
+            </View>
+          )
+        )}
+      </View>
+    );
+  }, [footerLineList, openCarrySheet]);
 
   if (!isReady) {
     return <SafeAreaView style={styles.screen} />;
@@ -463,9 +462,7 @@ export default function HomeScreen() {
         {inputVisible ? <InputBar onAdd={handleAdd} onClose={handleInputClose} /> : null}
       </KeyboardAvoidingView>
 
-      {!inputVisible ? (
-        <AddFab onPress={handleFabPress} isFull={isCurrentListFull} showMessage={showFullMessage} />
-      ) : null}
+      {!inputVisible ? <AddFab onPress={handleFabPress} isFull={isCurrentListFull} /> : null}
       <UndoButton batch={undoBatchInfo} onUndo={handleUndo} />
 
       <CarryOverSheet
@@ -488,4 +485,5 @@ const styles = StyleSheet.create({
   empty: { fontSize: type.empty, color: colors.muted },
   fallbackLink: { paddingHorizontal: layout.screenPadding, paddingVertical: 12 },
   fallbackLinkText: { fontSize: type.header, color: colors.muted },
+  fullLineText: { fontSize: type.empty, color: colors.muted },
 });

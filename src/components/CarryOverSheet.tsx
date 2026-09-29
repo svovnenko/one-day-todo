@@ -19,8 +19,9 @@ const SLIDE_DURATION_MS = 220;
 const SHEET_OFFSCREEN_OFFSET = 320;
 
 /**
- * Spec 3.4 / 4: white bottom sheet, rounded top, checkbox list, black
- * Move / grey text Skip.
+ * Spec 3.4 / 4 v7: white bottom sheet, rounded top, a plain text list --
+ * no checkboxes or circles. Tapping a row selects it (black text, black
+ * checkmark); a full-width black `Move N` and a grey `Let them go`.
  *
  * Deliberately NOT a React Native <Modal> (see TASK_FIXES_03): presenting
  * a native Modal while another native transition is in flight -- the
@@ -38,13 +39,13 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
   const free = freeSlots(tomorrowTasks.length);
 
-  // Resets the checkboxes to all-unchecked only on the hidden -> visible
+  // Resets the selection to all-unselected only on the hidden -> visible
   // transition (intentionally depends only on `visible`, not on
   // `tasks`/`tomorrowTasks` -- app/index.tsx rebuilds those arrays on
   // every render, and re-initializing on every one of those would snap a
-  // checkbox the user just toggled back while the sheet is still open).
+  // row the user just selected back while the sheet is still open).
   // Spec 3.4 v6: moving a task to tomorrow must be a conscious choice, so
-  // nothing starts pre-checked -- not even a carryCount-based nudge.
+  // nothing starts pre-selected -- not even a carryCount-based nudge.
   useEffect(() => {
     if (visible) {
       setChecked({});
@@ -60,31 +61,34 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
 
   if (!visible) return null;
 
-  // How many of tomorrow's free slots the current checks would consume --
-  // a deduplicating task merges into an existing tomorrow task instead of
-  // taking a new slot, so it's excluded (spec 3.4 v5).
+  // How many of tomorrow's free slots the current selection would consume
+  // -- a deduplicating task merges into an existing tomorrow task instead
+  // of taking a new slot, so it's excluded (spec 3.4 v5).
   const usedSlots = candidates.filter((c) => checked[c.task.id] && !c.blocked && !c.deduplicates).length;
 
   function toggle(candidate: CarryOverCandidate) {
     if (candidate.blocked) return;
     const id = candidate.task.id;
     setChecked((prev) => {
-      const willCheck = !prev[id];
-      if (willCheck && !candidate.deduplicates) {
+      const willSelect = !prev[id];
+      if (willSelect && !candidate.deduplicates) {
         const currentlyUsed = candidates.filter((c) => prev[c.task.id] && !c.blocked && !c.deduplicates).length;
-        if (currentlyUsed >= free) return prev; // no free slots left -- can't check another
+        if (currentlyUsed >= free) return prev; // no free slots left -- can't select another
       }
-      return { ...prev, [id]: willCheck };
+      return { ...prev, [id]: willSelect };
     });
   }
 
+  const selectedIds = candidates.filter((c) => checked[c.task.id]).map((c) => c.task.id);
+
   function handleMove() {
-    onMove(candidates.filter((c) => checked[c.task.id]).map((c) => c.task.id));
+    onMove(selectedIds);
   }
 
-  const tomorrowNote = free === 0 ? 'Tomorrow is full' : `Tomorrow: ${free} free`;
-  const anyChecked = candidates.some((c) => checked[c.task.id]);
-  const moveDisabled = free === 0 || !anyChecked;
+  const movableCount = candidates.filter((c) => !c.blocked).length;
+  const subtitle = free < movableCount ? `Choose up to ${free}` : 'Choose what to move';
+  const moveLabel = selectedIds.length > 0 ? `Move ${selectedIds.length}` : 'Move';
+  const moveDisabled = selectedIds.length === 0;
 
   return (
     <View style={styles.backdrop} pointerEvents="box-none">
@@ -92,43 +96,44 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
       <Animated.View style={{ transform: [{ translateY }] }}>
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <Text style={styles.title}>Move unfinished to tomorrow?</Text>
-          <Text style={styles.tomorrowNote}>{tomorrowNote}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
           <ScrollView style={styles.list} bounces={false}>
             {candidates.map(({ task, blocked, deduplicates }) => {
-              const isChecked = !!checked[task.id];
-              const disabledUnchecked = !blocked && !deduplicates && !isChecked && usedSlots >= free;
+              const isSelected = !!checked[task.id];
+              const slotsFull = !blocked && !deduplicates && !isSelected && usedSlots >= free;
+              const disabled = blocked || slotsFull;
+              const textStyle = isSelected
+                ? styles.rowTextSelected
+                : disabled
+                  ? styles.rowTextFaded
+                  : styles.rowTextUnselected;
               return (
                 <Pressable
                   key={task.id}
                   style={styles.row}
                   onPress={() => toggle({ task, blocked, deduplicates })}
-                  disabled={blocked}
+                  disabled={disabled}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected, disabled }}
                 >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      isChecked && styles.checkboxChecked,
-                      (blocked || disabledUnchecked) && styles.checkboxDisabled,
-                    ]}
-                  >
-                    {isChecked ? <Text style={styles.checkmark}>✓</Text> : null}
-                  </View>
-                  <View style={styles.rowTextColumn}>
-                    <Text style={[styles.rowText, blocked && styles.rowTextBlocked]} numberOfLines={1}>
-                      {task.text}
-                      {task.carryCount >= 1 ? <Text style={styles.counter}>{'  ×' + task.carryCount}</Text> : null}
-                    </Text>
-                    {blocked ? <Text style={styles.blockedNote}>can&rsquo;t move again</Text> : null}
-                  </View>
+                  <Text style={[styles.rowText, textStyle]} numberOfLines={1}>
+                    {task.text}
+                    {task.carryCount >= 1 ? <Text style={styles.counter}>{'  ×' + task.carryCount}</Text> : null}
+                  </Text>
+                  {isSelected ? (
+                    <Text style={styles.checkmark}>✓</Text>
+                  ) : blocked ? (
+                    <Text style={styles.blockedNote}>can&rsquo;t move again</Text>
+                  ) : null}
                 </Pressable>
               );
             })}
           </ScrollView>
           <Pressable style={[styles.moveButton, moveDisabled && styles.moveButtonDisabled]} onPress={handleMove} disabled={moveDisabled}>
-            <Text style={styles.moveButtonText}>Move</Text>
+            <Text style={styles.moveButtonText}>{moveLabel}</Text>
           </Pressable>
           <Pressable style={styles.skipButton} onPress={onSkip}>
-            <Text style={styles.skipButtonText}>Skip</Text>
+            <Text style={styles.skipButtonText}>Let them go</Text>
           </Pressable>
         </SafeAreaView>
       </Animated.View>
@@ -155,7 +160,7 @@ const styles = StyleSheet.create({
     maxHeight: '70%',
   },
   title: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: 4 },
-  tomorrowNote: { fontSize: 13, color: colors.muted, marginBottom: 12 },
+  subtitle: { fontSize: 13, color: colors.muted, marginBottom: 12 },
   list: { flexGrow: 0 },
   row: {
     flexDirection: 'row',
@@ -163,21 +168,11 @@ const styles = StyleSheet.create({
     minHeight: layout.rowHeight,
     gap: 12,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: colors.muted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: { backgroundColor: colors.text, borderColor: colors.text },
-  checkboxDisabled: { borderColor: colors.faint },
-  checkmark: { color: colors.background, fontSize: 13, fontWeight: '700' },
-  rowTextColumn: { flex: 1 },
-  rowText: { fontSize: 17, color: colors.text },
-  rowTextBlocked: { color: colors.faint },
+  rowText: { flex: 1, fontSize: 17 },
+  rowTextSelected: { color: colors.text },
+  rowTextUnselected: { color: colors.muted },
+  rowTextFaded: { color: colors.faint },
+  checkmark: { color: colors.text, fontSize: 17, fontWeight: '600' },
   blockedNote: { fontSize: 13, color: colors.faint },
   counter: { fontSize: 13, color: colors.faint },
   moveButton: {
