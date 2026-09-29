@@ -2,7 +2,8 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
-import { isPlanningMode, todayKey, tomorrowKey } from '@/logic/dates';
+import { isPlanningMode } from '@/logic/dates';
+import { planRollover } from '@/logic/rollover';
 
 export type View = 'today' | 'tomorrow';
 
@@ -44,6 +45,19 @@ type AppState = {
   /** Permanently deletes whatever is pending (called on timeout or explicitly). */
   commitPendingUndo: () => void;
   setSelectedView: (view: View) => void;
+  /**
+   * Day-end rollover (spec 3.5): commits any pending undo first, deletes
+   * every task whose day is before today, recomputes today/tomorrow's day
+   * keys, and resets the view to the mode default. Runs on launch, on
+   * AppState becoming active, and on the in-foreground timer to the next E.
+   */
+  runRollover: () => void;
+  /**
+   * Lighter than runRollover: just recomputes which view (Today/Tomorrow)
+   * is the mode default, without touching day keys or purging. Runs on the
+   * in-foreground timer to the next planning time P.
+   */
+  refreshMode: () => void;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
@@ -63,22 +77,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: () => {
     const settings = settingsRepo.getSettings();
-    const now = new Date();
-    const todayDay = todayKey(now, settings.dayEndTime);
-    const tomorrowDay = tomorrowKey(now, settings.dayEndTime);
-    const selectedView: View = isPlanningMode(now, settings.planningTime, settings.dayEndTime)
-      ? 'tomorrow'
-      : 'today';
-
-    set({
-      isReady: true,
-      settings,
-      todayDay,
-      tomorrowDay,
-      todayTasks: tasksRepo.listByDay(todayDay),
-      tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
-      selectedView,
-    });
+    set({ settings });
+    get().runRollover();
+    set({ isReady: true });
   },
 
   refreshTasks: () => {
@@ -134,4 +135,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setSelectedView: (view) => set({ selectedView: view }),
+
+  runRollover: () => {
+    get().commitPendingUndo(); // spec 3.5: commit a pending completion before purging
+    const { settings } = get();
+    const now = new Date();
+    const { todayDay, tomorrowDay, defaultView } = planRollover(now, settings);
+    tasksRepo.purgeBefore(todayDay);
+    set({
+      todayDay,
+      tomorrowDay,
+      selectedView: defaultView,
+      todayTasks: tasksRepo.listByDay(todayDay),
+      tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+    });
+  },
+
+  refreshMode: () => {
+    const { settings } = get();
+    const now = new Date();
+    const defaultView: View = isPlanningMode(now, settings.planningTime, settings.dayEndTime) ? 'tomorrow' : 'today';
+    set({ selectedView: defaultView });
+  },
 }));

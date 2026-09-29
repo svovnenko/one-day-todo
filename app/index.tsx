@@ -19,6 +19,7 @@ import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
 import { UndoPill } from '@/components/UndoPill';
 import type { Task } from '@/db/tasksRepo';
+import { useDayClock } from '@/hooks/useDayClock';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
@@ -47,6 +48,10 @@ export default function HomeScreen() {
   useEffect(() => {
     init();
   }, [init]);
+
+  // Keeps today/tomorrow and the Today/Tomorrow default in sync while the
+  // app runs: AppState-active, and timers to the next day-end/planning time.
+  useDayClock();
 
   useEffect(() => {
     if (inputVisible) {
