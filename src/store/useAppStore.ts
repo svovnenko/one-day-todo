@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
+import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
 
 export type View = 'today' | 'tomorrow';
@@ -70,6 +71,12 @@ type AppState = {
   skipCarrySheet: () => void;
   /** "Move": moves the checked tasks to tomorrow, marks the prompt shown, and closes the sheet. */
   moveCarryOverTasks: (taskIds: string[]) => void;
+  /**
+   * Persists any of planningTime/dayEndTime/reminderEnabled that are
+   * given, immediately recomputes the mode/day keys, and reschedules (or
+   * cancels) the daily reminder notification (spec 3.6).
+   */
+  updateSchedule: (partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>) => void;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
@@ -94,6 +101,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings });
     get().runRollover();
     set({ isReady: true });
+    applyReminderSchedule(settings).catch(() => {});
   },
 
   refreshTasks: () => {
@@ -196,5 +204,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     settingsRepo.setLastCarryPromptDate(todayDay);
     set({ settings: { ...settings, lastCarryPromptDate: todayDay }, carrySheetVisible: false });
     get().refreshTasks();
+  },
+
+  updateSchedule: (partial) => {
+    if (partial.planningTime !== undefined) settingsRepo.setPlanningTime(partial.planningTime);
+    if (partial.dayEndTime !== undefined) settingsRepo.setDayEndTime(partial.dayEndTime);
+    if (partial.reminderEnabled !== undefined) settingsRepo.setReminderEnabled(partial.reminderEnabled);
+
+    const settings = { ...get().settings, ...partial };
+    set({ settings });
+    get().runRollover(); // spec 3.6: recompute the mode immediately
+    applyReminderSchedule(settings).catch(() => {});
   },
 }));

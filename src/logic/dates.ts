@@ -119,3 +119,18 @@ export function parseDayKey(key: DayKey): Date {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d);
 }
+
+/** How many minutes P sits after E, wrapping through the logical day (0 if they're equal). */
+export function minutesAfterDayEnd(planningTime: string, dayEndTime: string): number {
+  return offsetMinutes(parseHHMM(planningTime), dayEndTime);
+}
+
+/**
+ * Spec 3.1: P must differ from E, but any other P is allowed -- picking a P
+ * that lands soon after E just shows a hint, it isn't blocked. "Soon" is
+ * within an hour of E.
+ */
+export function planningRightAfterDayEndHint(planningTime: string, dayEndTime: string): string | null {
+  const gap = minutesAfterDayEnd(planningTime, dayEndTime);
+  return gap > 0 && gap <= 60 ? 'Planning time is right after day end' : null;
+}

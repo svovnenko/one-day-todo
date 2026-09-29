@@ -1,20 +1,141 @@
-import { StyleSheet, Text, View } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, type } from '@/theme';
+import { formatHHMM, parseHHMM, planningRightAfterDayEndHint } from '@/logic/dates';
+import { useAppStore } from '@/store/useAppStore';
+import { colors, layout } from '@/theme';
+
+/** Builds a Date carrying just a time-of-day, for the native time pickers. */
+function timeToDate(hhmm: string): Date {
+  const d = new Date();
+  d.setHours(Math.floor(parseHHMM(hhmm) / 60), parseHHMM(hhmm) % 60, 0, 0);
+  return d;
+}
+
+function dateToTime(d: Date): string {
+  return formatHHMM(d.getHours() * 60 + d.getMinutes());
+}
 
 export default function SettingsScreen() {
+  const settings = useAppStore((s) => s.settings);
+  const updateSchedule = useAppStore((s) => s.updateSchedule);
+
+  function commitTime(field: 'planningTime' | 'dayEndTime', hhmm: string) {
+    const other = field === 'planningTime' ? settings.dayEndTime : settings.planningTime;
+    if (hhmm === other) {
+      Alert.alert('Planning time and day-end time must be different.');
+      return;
+    }
+    updateSchedule({ [field]: hhmm });
+  }
+
+  function openAndroidPicker(field: 'planningTime' | 'dayEndTime') {
+    DateTimePickerAndroid.open({
+      value: timeToDate(field === 'planningTime' ? settings.planningTime : settings.dayEndTime),
+      mode: 'time',
+      is24Hour: true,
+      onChange: (_event, date) => {
+        if (date) commitTime(field, dateToTime(date));
+      },
+    });
+  }
+
+  const hint = planningRightAfterDayEndHint(settings.planningTime, settings.dayEndTime);
+
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.center}>
-        <Text style={styles.text}>Settings</Text>
-      </View>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.sectionTitle}>Schedule</Text>
+        <View style={styles.group}>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Planning time</Text>
+            {Platform.OS === 'android' ? (
+              <Pressable onPress={() => openAndroidPicker('planningTime')}>
+                <Text style={styles.rowValue}>{settings.planningTime}</Text>
+              </Pressable>
+            ) : (
+              <DateTimePicker
+                mode="time"
+                display="compact"
+                value={timeToDate(settings.planningTime)}
+                onChange={(_event, date) => {
+                  if (date) commitTime('planningTime', dateToTime(date));
+                }}
+              />
+            )}
+          </View>
+          {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+
+          <View style={styles.divider} />
+
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Day ends at</Text>
+            {Platform.OS === 'android' ? (
+              <Pressable onPress={() => openAndroidPicker('dayEndTime')}>
+                <Text style={styles.rowValue}>{settings.dayEndTime}</Text>
+              </Pressable>
+            ) : (
+              <DateTimePicker
+                mode="time"
+                display="compact"
+                value={timeToDate(settings.dayEndTime)}
+                onChange={(_event, date) => {
+                  if (date) commitTime('dayEndTime', dateToTime(date));
+                }}
+              />
+            )}
+          </View>
+          <Text style={styles.caption}>Tasks left after this time are deleted.</Text>
+
+          <View style={styles.divider} />
+
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Daily reminder</Text>
+            <Switch
+              value={settings.reminderEnabled}
+              onValueChange={(value) => updateSchedule({ reminderEnabled: value })}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitle}>Backup</Text>
+        <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => Alert.alert('Export backup', 'Coming in the next update.')}>
+            <Text style={styles.rowLabel}>Export backup</Text>
+          </Pressable>
+          <View style={styles.divider} />
+          <Pressable style={styles.row} onPress={() => Alert.alert('Import backup', 'Coming in the next update.')}>
+            <Text style={styles.rowLabel}>Import backup</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  text: { fontSize: type.empty, color: colors.muted },
+  content: { paddingVertical: 24 },
+  sectionTitle: {
+    fontSize: 13,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    paddingHorizontal: layout.screenPadding,
+    marginBottom: 8,
+    marginTop: 20,
+  },
+  group: { backgroundColor: colors.background },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: layout.screenPadding,
+  },
+  rowLabel: { fontSize: 17, color: colors.text },
+  rowValue: { fontSize: 17, color: colors.muted },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: layout.screenPadding },
+  caption: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
+  hint: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
 });

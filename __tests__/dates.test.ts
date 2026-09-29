@@ -1,4 +1,12 @@
-import { addDays, dateKey, isPlanningMode, offset, todayKey, tomorrowKey } from '@/logic/dates';
+import {
+  addDays,
+  dateKey,
+  isPlanningMode,
+  offset,
+  planningRightAfterDayEndHint,
+  todayKey,
+  tomorrowKey,
+} from '@/logic/dates';
 
 // Full suite for spec 7 #19: E/P boundaries, P after midnight, month/year
 // rollover, and DST change days.
@@ -112,5 +120,22 @@ describe('DST safety (adding a calendar day never drifts by an hour)', () => {
     expect(todayKey(new Date(2026, 2, 8, 1, 30), E)).toBe('2026-03-07');
     // Once E has passed, "today" is the transition date itself.
     expect(todayKey(new Date(2026, 2, 8, 4, 30), E)).toBe('2026-03-08');
+  });
+});
+
+describe('planningRightAfterDayEndHint', () => {
+  const E = '04:00';
+
+  it('shows the hint when P is soon after E', () => {
+    expect(planningRightAfterDayEndHint('04:15', E)).toBe('Planning time is right after day end');
+    expect(planningRightAfterDayEndHint('05:00', E)).toBe('Planning time is right after day end');
+  });
+
+  it('is null well away from E', () => {
+    expect(planningRightAfterDayEndHint('20:00', E)).toBeNull();
+  });
+
+  it('is null when P equals E (that case is blocked elsewhere, not hinted)', () => {
+    expect(planningRightAfterDayEndHint('04:00', E)).toBeNull();
   });
 });
