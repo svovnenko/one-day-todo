@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "One-Day To-Do",
+    "slug": "one-day-todo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "onedaytodo",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFFFFF",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "userInterfaceStyle": "light"
+    },
+    "android": {
+      "userInterfaceStyle": "light",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      "expo-sqlite",
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
