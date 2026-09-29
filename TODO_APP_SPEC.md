@@ -10,7 +10,7 @@
 A minimal "paper notepad" to-do app for iPhone. It holds **one day at a time**:
 
 - You write a plain list of tasks for **today** (and, from the evening onward, for **tomorrow**).
-- **Swipe right** on a task to complete it. It is struck through and removed, and a round **Undo** button with a countdown ring appears for 3 seconds. After that it is permanently deleted, with no history ("done and forget").
+- **Swipe right** on a task to complete it. It is struck through and removed, and a round **Undo** button with a countdown ring appears for 2 seconds. After that it is permanently deleted, with no history ("done and forget").
 - At a configurable **planning time** (default **20:00**) the app switches to **Tomorrow** so you can plan the next day, and offers to **move unfinished tasks** there. Tasks that keep getting moved show a small **carry-over counter** (×2, ×3…).
 - At a configurable **day-end time** (default **04:00**, not midnight, so a late night still counts as today), whatever is left of today is **permanently deleted**. Tomorrow becomes Today.
 - No details, no priorities, no due times, no recurring tasks, no timers, no history, no stats, no accounts.
@@ -72,10 +72,12 @@ The target user is the owner only (single user, a personal app).
 - A task is **text only** (single line, trimmed, 1–200 chars; empty input is ignored).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Swipe right** on a task → it completes:
-  - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then collapses with a 150ms fade.
-  - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 64pt, dark `#1C1C1E`, shows only the white text **`Undo`** (15pt, semibold) with no icon, and sits at the **bottom center**, level with the + FAB.
-  - A white **countdown ring** (3pt stroke) around the button empties clockwise from 12 o'clock over **3 seconds**, like a timer. Tapping the button restores the task to its original position.
-  - After 3 seconds, or when another task is completed (only one pending undo at a time; the previous one is committed), the task is **deleted permanently**.
+  - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then fades (150ms) and **its height collapses to 0 (about 200ms)**, so the rows below slide up. No empty gap is ever left in the list, including during the Undo window. Undo re-inserts the row at its original position.
+  - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 96pt, dark `#1C1C1E`, shows only the white text **`Undo`** (22pt, semibold) with no icon, and sits at the bottom center, **raised: its bottom edge 80pt above the bottom safe area** (the button center is about 130pt from the bottom, above the + FAB).
+  - A white **countdown ring** (4pt stroke) around the button empties clockwise from 12 o'clock over **2 seconds**, like a timer. Tapping the button restores the task to its original position.
+  - **Batch undo (v4, owner decision):** every swipe adds the task to one pending **batch** and restarts the 2-second countdown. When the batch has 2 or more tasks, a small count (13pt, white, 70% opacity) shows under `Undo`.
+  - Tapping **Undo** restores **all** tasks in the batch to their original positions.
+  - When 2 seconds pass with no new swipe, **all** tasks in the batch are **deleted permanently**. Rollover, and leaving the app (AppState → background), also commit the batch.
 - **No editing (v4, owner decision):** tapping a task does **nothing**. A typo is fixed by completing the task and adding it again.
 - A tap never completes a task, which prevents accidental deletions.
 - No reordering, no due dates, no notes.
@@ -143,7 +145,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | List top | ~24pt gap below the header |
 | Header | One line, 15pt, grey `#8E8E93`: `Today · Tue 29 Sep` and `Tomorrow · Wed 30 Sep` as two tappable labels (logical dates). The Tomorrow label is shown **only in planning mode**. The selected label is black and medium weight. The gear icon (18pt, grey) sits on the right. Follow safe areas. |
 | FAB | 56pt white circle, bottom-left (16pt from edges, above the safe area), shadow (opacity 0.15, radius 8, offset y 2), black "+" 24pt |
-| Undo button | Round, 64pt, bottom center (level with the + FAB, above the safe area), `#1C1C1E`, white text `Undo` 15pt semibold, centred, no icon. A white 3pt countdown ring empties over 3s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
+| Undo button | Round, 96pt, bottom center, bottom edge 80pt above the bottom safe area (center about 130pt up), `#1C1C1E`, white text `Undo` 22pt semibold, centred, no icon. A white 4pt countdown ring empties over 2s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
 | Carry-over sheet | White bottom sheet with a rounded top (16pt), a simple checkbox list, and full-width black `Move` and grey text `Skip` buttons |
@@ -219,9 +221,9 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Add 3 tasks with Return between them | All 3 appear in order; the keyboard stays open |
-| 2 | Swipe right on a task | It is struck through and removed; the round Undo button appears immediately with a 3s countdown ring; the task is still gone after an app restart |
+| 2 | Swipe right on a task | It is struck through and removed; the round Undo button appears immediately with a 2s countdown ring; the task is still gone after an app restart |
 | 3 | Swipe right, then tap Undo | The task returns to its original position |
-| 4 | Complete task A, then task B within 3s | A is committed (deleted); the pill now refers to B |
+| 4 | Complete tasks A, B and C within 2s of each other, then tap Undo | All three come back in their original positions; the button showed the count 3 |
 | 5 | Tap a task, change the text, save | The text is updated; nothing is completed |
 | 6 | Open the app at 14:00 | Today is selected; there is **no Tomorrow label** and no way to reach Tomorrow |
 | 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 checked tasks |
@@ -286,7 +288,7 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Carry-over counter (×N, unchecked at ≥3) | **Accepted** |
 | Daily "N done" progress line | **Rejected**: "done and forget" |
 | Store/dev build | **Postponed**. Code backup via git/GitHub |
-| Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo pill (3s) |
+| Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo button (2s) |
 | Home/lock screen widget | **Rejected** |
 | Soft task-limit hint | **Rejected** |
 

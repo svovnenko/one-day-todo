@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
+import { BatchUndoScheduler } from '@/logic/batchUndoScheduler';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { applyReminderSchedule } from '@/logic/notifications';
@@ -11,18 +12,23 @@ import { resolveView } from '@/logic/viewLock';
 export type View = 'today' | 'tomorrow';
 export type Mode = 'day' | 'planning';
 
-/** Exported so the Undo pill's shrinking-line animation can't disagree with the store's actual timeout (spec 3.2). */
-export const UNDO_WINDOW_MS = 3000;
+/** Exported so the Undo button's ring animation can't disagree with the store's actual timeout (spec 3.2). */
+export const UNDO_WINDOW_MS = 2000;
 
 /**
- * A task the user just completed (swiped right). It stays in SQLite
- * untouched until the window commits, so killing the app mid-window loses
- * nothing (spec section 5) -- only the UI hides it and shows the Undo
- * button. `timeoutId` auto-commits after UNDO_WINDOW_MS.
+ * The tasks the user has swiped since the last commit/undo (spec 3.2 v4:
+ * batch undo), as exposed to the UI. They stay in SQLite untouched until
+ * the batch commits, so killing the app mid-window loses nothing (spec
+ * section 5) -- only the UI hides them and shows the Undo button. Every
+ * new swipe appends to `tasks` and restarts the countdown (owned by the
+ * BatchUndoScheduler below) -- it does NOT commit the earlier ones.
+ * `version` increments on every append, purely so the UI (the Undo
+ * button's ring) can tell "a new task joined" apart from "an unrelated
+ * re-render" without keying off any single task's id.
  */
-type PendingUndo = {
-  task: tasksRepo.Task;
-  timeoutId: ReturnType<typeof setTimeout>;
+type PendingBatch = {
+  tasks: tasksRepo.Task[];
+  version: number;
 };
 
 type AppState = {
@@ -36,7 +42,7 @@ type AppState = {
   todayTasks: tasksRepo.Task[];
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
-  pendingUndo: PendingUndo | null;
+  pendingBatch: PendingBatch | null;
   /** Whether the "Move unfinished to tomorrow?" bottom sheet is showing (spec 3.4). */
   carrySheetVisible: boolean;
   /**
@@ -57,22 +63,21 @@ type AppState = {
   /** In day mode, a 'tomorrow' target is redirected to today -- Tomorrow doesn't exist yet (spec 3.1). */
   addTask: (view: View, text: string) => void;
   /**
-   * Starts a task's completion: commits any already-pending task first,
-   * then opens (or replaces) the Undo window (UNDO_WINDOW_MS) for this
-   * one. Called at the swipe threshold, not after the row's own
-   * strike-through/fade animation finishes (TASK_FIXES_04), so the Undo
-   * button appears immediately and the 3s countdown starts from the
-   * swipe, not from ~500ms later.
+   * Adds a task to the pending batch and restarts its UNDO_WINDOW_MS
+   * timer -- it does NOT commit whatever was already pending (spec 3.2
+   * v4: batch undo). Called at the swipe threshold, not after the row's
+   * own strike-through/fade/collapse animation finishes (TASK_FIXES_04),
+   * so the Undo button appears immediately.
    */
   beginComplete: (task: tasksRepo.Task) => void;
-  /** Cancels the pending deletion; the task simply stays where it was. */
+  /** Restores every task in the batch (they were never deleted) and clears it. */
   undoPending: () => void;
-  /** Permanently deletes whatever is pending (called on timeout or explicitly). */
-  commitPendingUndo: () => void;
+  /** Permanently deletes every task in the batch, in one transaction (timeout, rollover, or backgrounding). */
+  commitPendingBatch: () => void;
   /** Ignored for 'tomorrow' while in day mode -- Tomorrow can't be selected before planning time (spec 3.1). */
   setSelectedView: (view: View) => void;
   /**
-   * Day-end rollover (spec 3.5): commits any pending undo first, deletes
+   * Day-end rollover (spec 3.5): commits the pending batch first, deletes
    * every task whose day is before today, recomputes today/tomorrow's day
    * keys, and resets the view to the mode default. Runs on launch, on
    * AppState becoming active, and on the in-foreground timer to the next E.
@@ -109,154 +114,157 @@ function sanitizeTaskText(raw: string): string {
   return raw.replace(/\r?\n/g, ' ').trim().slice(0, 200);
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  isReady: false,
-  settings: settingsRepo.DEFAULT_SETTINGS,
-  todayDay: '',
-  tomorrowDay: '',
-  mode: 'day',
-  todayTasks: [],
-  tomorrowTasks: [],
-  selectedView: 'today',
-  pendingUndo: null,
-  carrySheetVisible: false,
-  carryPromptDue: false,
-
-  init: () => {
-    let settings = settingsRepo.getSettings();
-
-    // Spec 3.1/3.6 v4: E and P now have restricted ranges (E is a whole
-    // hour 00:00-04:00, P is 12:00-23:59). A stored value outside those
-    // ranges (e.g. a leftover test value) is reset to the default and
-    // saved back, so the header dates stay meaningful.
-    if (!isValidDayEnd(settings.dayEndTime)) {
-      settingsRepo.setDayEndTime(settingsRepo.DEFAULT_SETTINGS.dayEndTime);
-      settings = { ...settings, dayEndTime: settingsRepo.DEFAULT_SETTINGS.dayEndTime };
-    }
-    if (!isValidPlanningTime(settings.planningTime)) {
-      settingsRepo.setPlanningTime(settingsRepo.DEFAULT_SETTINGS.planningTime);
-      settings = { ...settings, planningTime: settingsRepo.DEFAULT_SETTINGS.planningTime };
-    }
-
-    set({ settings });
-    get().runRollover();
-    set({ isReady: true });
-    applyReminderSchedule(settings).catch(() => {}); // reschedules under the (possibly corrected) settings
-  },
-
-  refreshTasks: () => {
-    const { todayDay, tomorrowDay } = get();
-    set({
-      todayTasks: tasksRepo.listByDay(todayDay),
-      tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
-    });
-  },
-
-  addTask: (view, text) => {
-    const trimmed = sanitizeTaskText(text);
-    if (!trimmed) return;
-    const { todayDay, tomorrowDay, mode } = get();
-    const effectiveView = resolveView(view, mode);
-    tasksRepo.add(effectiveView === 'today' ? todayDay : tomorrowDay, trimmed);
+export const useAppStore = create<AppState>((set, get) => {
+  // Owns the batch's timer lifecycle (add/restart/commit/cancel); see
+  // src/logic/batchUndoScheduler.ts. onCommit does the actual SQLite
+  // deletes (in one transaction) and syncs the store once the batch
+  // resolves, whether via timeout, rollover, or backgrounding.
+  const batchScheduler = new BatchUndoScheduler<tasksRepo.Task>(UNDO_WINDOW_MS, (tasks) => {
+    tasksRepo.removeMany(tasks.map((t) => t.id));
+    set({ pendingBatch: null });
     get().refreshTasks();
-  },
+  });
 
-  beginComplete: (task) => {
-    // Only one pending undo at a time -- completing another task commits
-    // (permanently deletes) whatever was already pending.
-    get().commitPendingUndo();
-    const timeoutId = setTimeout(() => get().commitPendingUndo(), UNDO_WINDOW_MS);
-    set({ pendingUndo: { task, timeoutId } });
-  },
+  return {
+    isReady: false,
+    settings: settingsRepo.DEFAULT_SETTINGS,
+    todayDay: '',
+    tomorrowDay: '',
+    mode: 'day',
+    todayTasks: [],
+    tomorrowTasks: [],
+    selectedView: 'today',
+    pendingBatch: null,
+    carrySheetVisible: false,
+    carryPromptDue: false,
 
-  undoPending: () => {
-    const { pendingUndo } = get();
-    if (!pendingUndo) return;
-    clearTimeout(pendingUndo.timeoutId);
-    set({ pendingUndo: null });
-  },
+    init: () => {
+      let settings = settingsRepo.getSettings();
 
-  commitPendingUndo: () => {
-    const { pendingUndo } = get();
-    if (!pendingUndo) return;
-    clearTimeout(pendingUndo.timeoutId);
-    tasksRepo.remove(pendingUndo.task.id);
-    set({ pendingUndo: null });
-    get().refreshTasks();
-  },
+      // Spec 3.1/3.6 v4: E and P now have restricted ranges (E is a whole
+      // hour 00:00-04:00, P is 12:00-23:59). A stored value outside those
+      // ranges (e.g. a leftover test value) is reset to the default and
+      // saved back, so the header dates stay meaningful.
+      if (!isValidDayEnd(settings.dayEndTime)) {
+        settingsRepo.setDayEndTime(settingsRepo.DEFAULT_SETTINGS.dayEndTime);
+        settings = { ...settings, dayEndTime: settingsRepo.DEFAULT_SETTINGS.dayEndTime };
+      }
+      if (!isValidPlanningTime(settings.planningTime)) {
+        settingsRepo.setPlanningTime(settingsRepo.DEFAULT_SETTINGS.planningTime);
+        settings = { ...settings, planningTime: settingsRepo.DEFAULT_SETTINGS.planningTime };
+      }
 
-  setSelectedView: (view) => set({ selectedView: resolveView(view, get().mode) }),
+      set({ settings });
+      get().runRollover();
+      set({ isReady: true });
+      applyReminderSchedule(settings).catch(() => {}); // reschedules under the (possibly corrected) settings
+    },
 
-  runRollover: () => {
-    get().commitPendingUndo(); // spec 3.5: commit a pending completion before purging
-    const { settings } = get();
-    const now = new Date();
-    const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
-    tasksRepo.purgeBefore(todayDay);
-    set({
-      todayDay,
-      tomorrowDay,
-      mode,
-      selectedView: defaultView,
-      todayTasks: tasksRepo.listByDay(todayDay),
-      tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
-    });
-    get().evaluateCarryPrompt();
-  },
+    refreshTasks: () => {
+      const { todayDay, tomorrowDay } = get();
+      set({
+        todayTasks: tasksRepo.listByDay(todayDay),
+        tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+      });
+    },
 
-  refreshMode: () => {
-    const { settings } = get();
-    const now = new Date();
-    const { mode, defaultView } = planRollover(now, settings);
-    set({ mode, selectedView: defaultView });
-    get().evaluateCarryPrompt();
-  },
+    addTask: (view, text) => {
+      const trimmed = sanitizeTaskText(text);
+      if (!trimmed) return;
+      const { todayDay, tomorrowDay, mode } = get();
+      const effectiveView = resolveView(view, mode);
+      tasksRepo.add(effectiveView === 'today' ? todayDay : tomorrowDay, trimmed);
+      get().refreshTasks();
+    },
 
-  evaluateCarryPrompt: () => {
-    const { settings, todayDay, todayTasks } = get();
-    const now = new Date();
-    const due = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
-    if (due) set({ carryPromptDue: true });
-  },
+    beginComplete: (task) => {
+      batchScheduler.add(task);
+      set({ pendingBatch: batchScheduler.current });
+    },
 
-  showCarrySheetIfDue: () => {
-    if (get().carryPromptDue) set({ carryPromptDue: false, carrySheetVisible: true });
-  },
+    undoPending: () => {
+      // Nothing to restore in SQLite -- the batch's tasks were never deleted.
+      batchScheduler.cancel();
+      set({ pendingBatch: null });
+    },
 
-  hideCarrySheet: () => set({ carrySheetVisible: false }),
+    commitPendingBatch: () => {
+      batchScheduler.commit(); // no-ops if nothing is pending; otherwise its onCommit (above) syncs the store
+    },
 
-  openCarrySheet: () => set({ carrySheetVisible: true }),
+    setSelectedView: (view) => set({ selectedView: resolveView(view, get().mode) }),
 
-  skipCarrySheet: () => {
-    const { todayDay, settings } = get();
-    settingsRepo.setLastCarryPromptDate(todayDay);
-    set({
-      settings: { ...settings, lastCarryPromptDate: todayDay },
-      carrySheetVisible: false,
-      carryPromptDue: false,
-    });
-  },
+    runRollover: () => {
+      get().commitPendingBatch(); // spec 3.5: commit the pending batch before purging
+      const { settings } = get();
+      const now = new Date();
+      const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
+      tasksRepo.purgeBefore(todayDay);
+      set({
+        todayDay,
+        tomorrowDay,
+        mode,
+        selectedView: defaultView,
+        todayTasks: tasksRepo.listByDay(todayDay),
+        tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+      });
+      get().evaluateCarryPrompt();
+    },
 
-  moveCarryOverTasks: (taskIds) => {
-    const { todayDay, tomorrowDay, settings } = get();
-    moveTasks(taskIds, todayDay, tomorrowDay);
-    settingsRepo.setLastCarryPromptDate(todayDay);
-    set({
-      settings: { ...settings, lastCarryPromptDate: todayDay },
-      carrySheetVisible: false,
-      carryPromptDue: false,
-    });
-    get().refreshTasks();
-  },
+    refreshMode: () => {
+      const { settings } = get();
+      const now = new Date();
+      const { mode, defaultView } = planRollover(now, settings);
+      set({ mode, selectedView: defaultView });
+      get().evaluateCarryPrompt();
+    },
 
-  updateSchedule: (partial) => {
-    if (partial.planningTime !== undefined) settingsRepo.setPlanningTime(partial.planningTime);
-    if (partial.dayEndTime !== undefined) settingsRepo.setDayEndTime(partial.dayEndTime);
-    if (partial.reminderEnabled !== undefined) settingsRepo.setReminderEnabled(partial.reminderEnabled);
+    evaluateCarryPrompt: () => {
+      const { settings, todayDay, todayTasks } = get();
+      const now = new Date();
+      const due = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
+      if (due) set({ carryPromptDue: true });
+    },
 
-    const settings = { ...get().settings, ...partial };
-    set({ settings });
-    get().runRollover(); // spec 3.6: recompute the mode immediately
-    applyReminderSchedule(settings).catch(() => {});
-  },
-}));
+    showCarrySheetIfDue: () => {
+      if (get().carryPromptDue) set({ carryPromptDue: false, carrySheetVisible: true });
+    },
+
+    hideCarrySheet: () => set({ carrySheetVisible: false }),
+
+    openCarrySheet: () => set({ carrySheetVisible: true }),
+
+    skipCarrySheet: () => {
+      const { todayDay, settings } = get();
+      settingsRepo.setLastCarryPromptDate(todayDay);
+      set({
+        settings: { ...settings, lastCarryPromptDate: todayDay },
+        carrySheetVisible: false,
+        carryPromptDue: false,
+      });
+    },
+
+    moveCarryOverTasks: (taskIds) => {
+      const { todayDay, tomorrowDay, settings } = get();
+      moveTasks(taskIds, todayDay, tomorrowDay);
+      settingsRepo.setLastCarryPromptDate(todayDay);
+      set({
+        settings: { ...settings, lastCarryPromptDate: todayDay },
+        carrySheetVisible: false,
+        carryPromptDue: false,
+      });
+      get().refreshTasks();
+    },
+
+    updateSchedule: (partial) => {
+      if (partial.planningTime !== undefined) settingsRepo.setPlanningTime(partial.planningTime);
+      if (partial.dayEndTime !== undefined) settingsRepo.setDayEndTime(partial.dayEndTime);
+      if (partial.reminderEnabled !== undefined) settingsRepo.setReminderEnabled(partial.reminderEnabled);
+
+      const settings = { ...get().settings, ...partial };
+      set({ settings });
+      get().runRollover(); // spec 3.6: recompute the mode immediately
+      applyReminderSchedule(settings).catch(() => {});
+    },
+  };
+});

@@ -6,59 +6,68 @@ import Svg, { Circle } from 'react-native-svg';
 import { UNDO_WINDOW_MS } from '@/store/useAppStore';
 import { colors } from '@/theme';
 
+export type UndoBatchInfo = {
+  /** Bumped every time a task joins the batch -- how this component tells "a new swipe happened" apart from an unrelated re-render, without keying off any single task's id. */
+  version: number;
+  /** Batch size; a count shows under "Undo" once this reaches 2 (spec 3.2 v4: batch undo). */
+  count: number;
+};
+
 type Props = {
-  /** The pending task's id, or null when nothing is pending. Drives this component's own mount/reset/fade-out lifecycle (see comment below). */
-  taskId: string | null;
+  /** Null when nothing is pending. Drives this component's own mount/reset/fade-out lifecycle (see comment below). */
+  batch: UndoBatchInfo | null;
   onUndo: () => void;
 };
 
-const SIZE = 64; // v4 (TASK_FIXES_05): bumped from 56pt; no longer tied to the + FAB's own size
-const STROKE_WIDTH = 3;
+const SIZE = 96; // v4 (TASK_FIXES_06): bumped from 64pt (1.5x)
+const STROKE_WIDTH = 4;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const EXIT_FADE_MS = 200;
+const BOTTOM_OFFSET = 80; // v4 (TASK_FIXES_06): raised above the + FAB (was level with it)
 
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 
 /**
- * Spec 3.2 / 4: round 64pt Undo button, bottom center, level with the +
- * FAB (same bottom offset) -- dark background, only the white "Undo"
- * text, no icon. A white 3pt ring empties clockwise from 12 o'clock over
- * UNDO_WINDOW_MS.
+ * Spec 3.2 / 4: round 96pt Undo button, bottom center, its bottom edge
+ * raised 80pt above the safe area (center about 130pt up, above the +
+ * FAB) -- dark background, only the white "Undo" text, no icon. A white
+ * 4pt ring empties clockwise from 12 o'clock over UNDO_WINDOW_MS. When
+ * the batch has 2+ tasks, a small count shows under "Undo".
  *
- * This component manages its own show/reset/fade-out purely from `taskId`
- * (rather than being mounted with a `key` of the task id): a `key` change
- * would unmount-and-remount on ANY change, including taskId -> null, which
- * would skip the "fades out when the time is up" exit animation (spec 4).
- * Instead: taskId null -> non-null shows it and starts the ring; non-null
- * -> a DIFFERENT non-null (a new task replaced the pending one) resets the
- * ring instantly, no fade; non-null -> null fades the whole button out
- * before unmounting.
+ * This component manages its own show/reset/fade-out purely from `batch`
+ * (rather than being mounted with a `key`, which would unmount-and-remount
+ * on ANY change, including batch -> null, skipping the "fades out when
+ * the time is up" exit animation -- spec 4). Instead: null -> non-null
+ * shows it and starts the ring; non-null -> non-null with a DIFFERENT
+ * `version` (another task joined the batch) resets the ring instantly, no
+ * fade; non-null -> null fades the whole button out before unmounting.
  */
-export function UndoButton({ taskId, onUndo }: Props) {
-  const [mounted, setMounted] = useState(taskId !== null);
-  const opacity = useRef(new Animated.Value(taskId !== null ? 1 : 0)).current;
+export function UndoButton({ batch, onUndo }: Props) {
+  const [mounted, setMounted] = useState(batch !== null);
+  const opacity = useRef(new Animated.Value(batch !== null ? 1 : 0)).current;
   const progress = useSharedValue(0);
-  const previousTaskId = useRef<string | null>(null);
+  const previousVersion = useRef<number | null>(null);
 
   useEffect(() => {
-    if (taskId) {
+    if (batch) {
       // Appears immediately, and restarts instantly if it was already
-      // showing for a different task (two quick completions in a row).
+      // showing (another task just joined the batch).
       setMounted(true);
       opacity.stopAnimation();
       opacity.setValue(1);
       progress.value = 0;
       progress.value = withTiming(1, { duration: UNDO_WINDOW_MS, easing: Easing.linear });
-    } else if (previousTaskId.current) {
+      previousVersion.current = batch.version;
+    } else if (previousVersion.current !== null) {
       Animated.timing(opacity, {
         toValue: 0,
         duration: EXIT_FADE_MS,
         useNativeDriver: true,
       }).start(() => setMounted(false));
+      previousVersion.current = null;
     }
-    previousTaskId.current = taskId;
-  }, [taskId, opacity, progress]);
+  }, [batch, opacity, progress]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: progress.value * CIRCUMFERENCE,
@@ -82,6 +91,7 @@ export function UndoButton({ taskId, onUndo }: Props) {
           />
         </Svg>
         <Text style={styles.text}>Undo</Text>
+        {batch && batch.count >= 2 ? <Text style={styles.count}>{batch.count}</Text> : null}
       </Pressable>
     </Animated.View>
   );
@@ -92,7 +102,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 16, // same bottom offset as the + FAB
+    bottom: BOTTOM_OFFSET,
     alignItems: 'center',
   },
   button: {
@@ -114,5 +124,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     transform: [{ rotate: '-90deg' }],
   },
-  text: { color: colors.pillText, fontSize: 15, fontWeight: '600' },
+  text: { color: colors.pillText, fontSize: 22, fontWeight: '600' },
+  count: { color: colors.pillText, fontSize: 13, opacity: 0.7 },
 });

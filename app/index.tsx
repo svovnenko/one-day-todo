@@ -5,21 +5,32 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Android needs this opted in explicitly; iOS supports LayoutAnimation by
+// default. Belt-and-suspenders alongside TaskRow's own height-collapse
+// animation (TASK_FIXES_06): by the time a row actually leaves `tasks`
+// below, its own animation has already brought it to zero height/opacity,
+// so this mainly guards against any residual snap in whatever's left.
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
 import { AddFab } from '@/components/AddFab';
 import { CarryOverSheet } from '@/components/CarryOverSheet';
 import { Header } from '@/components/Header';
 import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
-import { UndoButton } from '@/components/UndoButton';
+import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
 import { useDayClock } from '@/hooks/useDayClock';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
@@ -33,7 +44,7 @@ export default function HomeScreen() {
   const tomorrowDay = useAppStore((s) => s.tomorrowDay);
   const todayTasks = useAppStore((s) => s.todayTasks);
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
-  const pendingUndo = useAppStore((s) => s.pendingUndo);
+  const pendingBatch = useAppStore((s) => s.pendingBatch);
   const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
   const carryPromptDue = useAppStore((s) => s.carryPromptDue);
   const init = useAppStore((s) => s.init);
@@ -51,11 +62,10 @@ export default function HomeScreen() {
   const inputRef = useRef<TextInput>(null);
   const [inputVisible, setInputVisible] = useState(false);
   const [draft, setDraft] = useState('');
-  // Rows whose own strike-through+fade animation has finished and should
-  // now actually be removed from the list (TASK_FIXES_04) -- kept
-  // separate from `pendingUndo` so the list doesn't yank a row out from
-  // under its own in-progress animation the instant the swipe threshold
-  // is crossed.
+  // Rows whose own completion animation has finished and should now
+  // actually be removed from the list (TASK_FIXES_04) -- kept separate
+  // from `pendingBatch` so the list doesn't yank a row out from under its
+  // own in-progress animation the instant the swipe threshold is crossed.
   const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -154,25 +164,30 @@ export default function HomeScreen() {
     setInputVisible(true);
   }
 
-  /** This row's own strike-through+fade has finished -- now actually remove it from the list. */
+  /** This row's own completion animation (strike-through, fade, collapse) has finished -- now actually remove it from the list. */
   function handleAnimationComplete(task: { id: string }) {
-    // If Undo was already pressed (or a newer completion superseded this
-    // one) before this row's own animation finished, don't hide it --
-    // either it's already been restored, or it's already gone from the
-    // underlying data (in which case this is a harmless no-op).
-    if (pendingUndo?.task.id !== task.id) return;
+    // If Undo was already pressed (or the batch already committed/lost
+    // this task some other way) before this row's own animation finished,
+    // don't hide it -- either it's already been restored, or it's already
+    // gone from the underlying data (a harmless no-op either way).
+    if (!pendingBatch?.tasks.some((t) => t.id === task.id)) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setHiddenRowIds((prev) => new Set(prev).add(task.id));
   }
 
+  /** Restores every task in the pending batch (spec 3.2 v4). */
   function handleUndo() {
-    const task = pendingUndo?.task;
+    const batchTaskIds = pendingBatch?.tasks.map((t) => t.id) ?? [];
     undoPending();
-    if (task) {
+    if (batchTaskIds.length > 0) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setHiddenRowIds((prev) => {
-        if (!prev.has(task.id)) return prev;
         const next = new Set(prev);
-        next.delete(task.id);
-        return next;
+        let changed = false;
+        for (const id of batchTaskIds) {
+          if (next.delete(id)) changed = true;
+        }
+        return changed ? next : prev;
       });
     }
   }
@@ -196,13 +211,25 @@ export default function HomeScreen() {
     }
   }
 
-  // Stable reference unless todayTasks or the pending task actually change
-  // -- passed to CarryOverSheet, which otherwise has no way to tell "a new
-  // task list" apart from "the same list, re-filtered because the parent
-  // re-rendered for an unrelated reason" (TASK_FIXES_03).
-  const todayUnfinishedTasks = useMemo(
-    () => (pendingUndo ? todayTasks.filter((t) => t.id !== pendingUndo.task.id) : todayTasks),
-    [todayTasks, pendingUndo]
+  // Stable reference unless todayTasks or the pending batch actually
+  // change -- passed to CarryOverSheet, which otherwise has no way to
+  // tell "a new task list" apart from "the same list, re-filtered because
+  // the parent re-rendered for an unrelated reason" (TASK_FIXES_03).
+  // Excludes every task in the batch, not just one (TASK_FIXES_06/07).
+  const todayUnfinishedTasks = useMemo(() => {
+    if (!pendingBatch) return todayTasks;
+    const batchIds = new Set(pendingBatch.tasks.map((t) => t.id));
+    return todayTasks.filter((t) => !batchIds.has(t.id));
+  }, [todayTasks, pendingBatch]);
+
+  // Stable {version, count} for the Undo button -- derived from
+  // pendingBatch (whose reference only changes when the store actually
+  // updates it), memoized so re-renders for unrelated reasons (e.g.
+  // typing a draft) don't hand UndoButton a "new" object that would
+  // needlessly restart its ring.
+  const undoBatchInfo: UndoBatchInfo | null = useMemo(
+    () => (pendingBatch ? { version: pendingBatch.version, count: pendingBatch.tasks.length } : null),
+    [pendingBatch]
   );
 
   if (!isReady) {
@@ -269,7 +296,7 @@ export default function HomeScreen() {
       </KeyboardAvoidingView>
 
       {!inputVisible ? <AddFab onPress={openInput} /> : null}
-      <UndoButton taskId={pendingUndo?.task.id ?? null} onUndo={handleUndo} />
+      <UndoButton batch={undoBatchInfo} onUndo={handleUndo} />
 
       <CarryOverSheet
         visible={carrySheetVisible}

@@ -9,6 +9,8 @@ import { useAppStore } from '@/store/useAppStore';
  * - runs the full rollover on AppState becoming active (the day may have
  *   changed while backgrounded, and iOS suspends JS timers in the
  *   background so they can't be relied on there),
+ * - commits the pending Undo batch when AppState goes to background (spec
+ *   3.2 v4: leaving the app commits it, same as a rollover or the timeout),
  * - arms an in-foreground timer to the next day-end (E) that runs the full
  *   rollover and re-arms itself,
  * - arms an in-foreground timer to the next planning time (P) that flips
@@ -20,6 +22,7 @@ export function useDayClock() {
   const planningTime = useAppStore((s) => s.settings.planningTime);
   const runRollover = useAppStore((s) => s.runRollover);
   const refreshMode = useAppStore((s) => s.refreshMode);
+  const commitPendingBatch = useAppStore((s) => s.commitPendingBatch);
 
   const eTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,6 +50,8 @@ export function useDayClock() {
       if (state === 'active') {
         runRollover();
         armTimers();
+      } else if (state === 'background') {
+        commitPendingBatch();
       }
     });
 
@@ -55,5 +60,5 @@ export function useDayClock() {
       if (pTimer.current) clearTimeout(pTimer.current);
       subscription.remove();
     };
-  }, [dayEndTime, planningTime, runRollover, refreshMode]);
+  }, [dayEndTime, planningTime, runRollover, refreshMode, commitPendingBatch]);
 }

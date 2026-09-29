@@ -65,6 +65,17 @@ export function remove(id: string): void {
   getDb().runSync('DELETE FROM tasks WHERE id = ?', id);
 }
 
+/** Deletes several tasks in one transaction (spec 3.2 v4: committing a batch-undo timeout/rollover). */
+export function removeMany(ids: string[]): void {
+  if (ids.length === 0) return;
+  const db = getDb();
+  db.withTransactionSync(() => {
+    for (const id of ids) {
+      db.runSync('DELETE FROM tasks WHERE id = ?', id);
+    }
+  });
+}
+
 /**
  * Re-inserts a task exactly as it was. The normal Undo flow never deletes a
  * task from SQLite while its undo window is open (the row is only hidden
