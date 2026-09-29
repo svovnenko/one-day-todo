@@ -1,16 +1,16 @@
 import { useIsFocused, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppState,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
+  ListRenderItemInfo,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   UIManager,
   View,
 } from 'react-native';
@@ -31,8 +31,10 @@ import { Header } from '@/components/Header';
 import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
 import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
+import type { Task } from '@/db/tasksRepo';
 import { useDayClock } from '@/hooks/useDayClock';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
+import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
 
@@ -59,9 +61,7 @@ export default function HomeScreen() {
   const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
 
   const router = useRouter();
-  const inputRef = useRef<TextInput>(null);
   const [inputVisible, setInputVisible] = useState(false);
-  const [draft, setDraft] = useState('');
   // Rows whose own completion animation has finished and should now
   // actually be removed from the list (TASK_FIXES_04) -- kept separate
   // from `pendingBatch` so the list doesn't yank a row out from under its
@@ -75,8 +75,25 @@ export default function HomeScreen() {
   const [restoreCounts, setRestoreCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    init();
+    // OPT-01: never leave the app stuck on the native splash screen if
+    // this throws -- log it and let the (still-rendered, blank) screen
+    // show instead; the safety-net timer in app/_layout.tsx hides the
+    // splash regardless after a few seconds either way.
+    try {
+      init();
+    } catch (error) {
+      console.error('Failed to initialize app:', error);
+    }
   }, [init]);
+
+  // OPT-01: hides the launch splash the moment the store is ready, so the
+  // splash goes straight to the real list instead of to a blank white
+  // frame while `!isReady` (that blank frame is still the fallback if
+  // init() above throws before ever setting isReady, which is what the
+  // 3s safety-net timer in app/_layout.tsx is for).
+  useEffect(() => {
+    if (isReady) hideSplashOnce();
+  }, [isReady]);
 
   // Keeps today/tomorrow and the Today/Tomorrow default in sync while the
   // app runs: AppState-active, and timers to the next day-end/planning time.
@@ -113,62 +130,32 @@ export default function HomeScreen() {
     });
   }, [todayTasks, tomorrowTasks]);
 
-  // Guards close/open against a stale keyboardDidHide firing after this
-  // session has already ended (e.g. our own Keyboard.dismiss() inside
-  // closeInput() triggering the same event again).
-  const sessionIdRef = useRef(0);
+  /**
+   * Return, from InputBar: add to whichever list is currently selected.
+   * Reads selectedView from the live store rather than this render's
+   * closure -- InputBar itself never re-renders on unrelated screen
+   * updates (that's the whole point of OPT-01), so there's no guaranteed
+   * re-render to refresh a captured `selectedView` if the mode flips
+   * while the bar is open. useAppStore.getState() sidesteps that (same
+   * technique as TASK_FIXES_07 item 0).
+   */
+  const handleAdd = useCallback((text: string) => {
+    addTask(useAppStore.getState().selectedView, text);
+  }, [addTask]);
 
-  useEffect(() => {
-    if (inputVisible) {
-      // Focus once the input bar has mounted.
-      const id = setTimeout(() => inputRef.current?.focus(), 0);
-      return () => clearTimeout(id);
-    }
-  }, [inputVisible]);
+  /** InputBar's keyboard hid: save a non-empty draft, then close. */
+  const handleInputClose = useCallback(
+    (text: string) => {
+      if (text.trim().length > 0) {
+        addTask(useAppStore.getState().selectedView, text);
+      }
+      Keyboard.dismiss(); // formality -- it's normally already hidden, since that's what triggered this
+      setInputVisible(false);
+    },
+    [addTask]
+  );
 
-  // Spec 3.3: the input bar closes whenever the keyboard hides for any
-  // reason (tap outside, keyboard dismiss, swipe down, leaving the
-  // screen). Re-subscribed whenever draft changes so the listener always
-  // closes over its latest value, not a stale one from when it opened.
-  useEffect(() => {
-    if (!inputVisible) return;
-    const mySession = sessionIdRef.current;
-    const subscription = Keyboard.addListener('keyboardDidHide', () => {
-      if (sessionIdRef.current !== mySession) return; // this session already ended
-      closeInput();
-    });
-    return () => subscription.remove();
-  }, [inputVisible, draft]);
-
-  /** Saves the draft if non-empty. */
-  function commitDraft() {
-    if (draft.trim().length > 0) {
-      addTask(selectedView, draft);
-    }
-  }
-
-  function handleSubmit() {
-    // Return adds and keeps the keyboard open for fast entry.
-    // blurOnSubmit is false on the TextInput, so this never hides the
-    // keyboard, and the keyboardDidHide listener above never fires here.
-    const text = draft;
-    setDraft('');
-    if (text.trim().length > 0) addTask(selectedView, text);
-  }
-
-  /** Saves any non-empty draft first, then closes the input bar. */
-  function closeInput() {
-    sessionIdRef.current += 1; // invalidate this session (including our own Keyboard.dismiss() below)
-    commitDraft();
-    setDraft('');
-    Keyboard.dismiss();
-    setInputVisible(false);
-  }
-
-  function openInput() {
-    sessionIdRef.current += 1;
-    setInputVisible(true);
-  }
+  const openInput = useCallback(() => setInputVisible(true), []);
 
   /**
    * This row's own completion animation (strike-through, fade, collapse)
@@ -186,8 +173,14 @@ export default function HomeScreen() {
    * imperative, always-current read of the live store, not a react to
    * this component's own props/state, so it's correct regardless of
    * which stale instance of this function ends up calling it.
+   *
+   * OPT-01: also wrapped in useCallback with an empty dependency array --
+   * nothing it reads (useAppStore.getState, setHiddenRowIds) ever
+   * changes, so this reference is stable across every render, which is
+   * required for React.memo(TaskRow) to actually skip re-rendering rows
+   * whose task data hasn't changed.
    */
-  function handleAnimationComplete(task: { id: string }) {
+  const handleAnimationComplete = useCallback((task: { id: string }) => {
     const liveBatch = useAppStore.getState().pendingBatch;
     // If Undo was already pressed (or the batch already committed/lost
     // this task some other way) before this row's own animation finished,
@@ -196,15 +189,14 @@ export default function HomeScreen() {
     if (!liveBatch?.tasks.some((t) => t.id === task.id)) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setHiddenRowIds((prev) => new Set(prev).add(task.id));
-  }
+  }, []);
 
   /**
    * Restores every task in the pending batch (spec 3.2 v4). Reads
-   * useAppStore.getState() rather than the `pendingBatch` closed over by
-   * this render, for the same reason as handleAnimationComplete above --
-   * cheap insurance even though, unlike that callback, this one is
-   * invoked directly by a fresh UndoButton press rather than from a
-   * long-lived closure chain.
+   * useAppStore.getState() rather than a React-closed-over value, for the
+   * same reason as handleAnimationComplete above -- cheap insurance even
+   * though, unlike that callback, this one is invoked directly by a
+   * fresh UndoButton press rather than from a long-lived closure chain.
    *
    * TASK_FIXES_07 item 0b: bumps each restored task's entry in
    * `restoreCounts`, which is folded into the FlatList's key. That forces
@@ -222,7 +214,7 @@ export default function HomeScreen() {
    * an unmount+remount via the key resets all of it at once, guaranteed,
    * the same way a genuinely fresh task row already does.
    */
-  function handleUndo() {
+  const handleUndo = useCallback(() => {
     const liveBatch = useAppStore.getState().pendingBatch;
     const batchTaskIds = liveBatch?.tasks.map((t) => t.id) ?? [];
     undoPending();
@@ -244,26 +236,29 @@ export default function HomeScreen() {
         return changed ? next : prev;
       });
     }
-  }
+  }, [undoPending]);
 
   // Skip, the backdrop tap, and Move must always hide the sheet, even if
   // the store update itself throws (TASK_FIXES_03) -- hideCarrySheet is a
   // single, unconditional state set that can't fail the same way.
-  function handleSkipCarrySheet() {
+  const handleSkipCarrySheet = useCallback(() => {
     try {
       skipCarrySheet();
     } finally {
       hideCarrySheet();
     }
-  }
+  }, [skipCarrySheet, hideCarrySheet]);
 
-  function handleMoveCarryOverTasks(taskIds: string[]) {
-    try {
-      moveCarryOverTasks(taskIds);
-    } finally {
-      hideCarrySheet();
-    }
-  }
+  const handleMoveCarryOverTasks = useCallback(
+    (taskIds: string[]) => {
+      try {
+        moveCarryOverTasks(taskIds);
+      } finally {
+        hideCarrySheet();
+      }
+    },
+    [moveCarryOverTasks, hideCarrySheet]
+  );
 
   // Stable reference unless todayTasks or the pending batch actually
   // change -- passed to CarryOverSheet, which otherwise has no way to
@@ -278,29 +273,70 @@ export default function HomeScreen() {
 
   // Stable {version, count} for the Undo button -- derived from
   // pendingBatch (whose reference only changes when the store actually
-  // updates it), memoized so re-renders for unrelated reasons (e.g.
-  // typing a draft) don't hand UndoButton a "new" object that would
-  // needlessly restart its ring.
+  // updates it), memoized so re-renders for unrelated reasons don't hand
+  // UndoButton a "new" object that would needlessly restart its ring.
   const undoBatchInfo: UndoBatchInfo | null = useMemo(
     () => (pendingBatch ? { version: pendingBatch.version, count: pendingBatch.tasks.length } : null),
     [pendingBatch]
+  );
+
+  // OPT-01: memoized so this array's own reference stays stable across
+  // renders that don't actually change which tasks should show (e.g. the
+  // Undo button's ring animation ticking, or anything else re-rendering
+  // this screen for an unrelated reason) -- on its own this wouldn't stop
+  // TaskRow from re-rendering (React.memo compares its OWN `task` prop,
+  // not this array), but it does mean FlatList doesn't have to redo its
+  // internal bookkeeping for a `data` array that's reference-different
+  // but content-identical to last time.
+  const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
+  const tasks = useMemo(
+    () => rawTasks.filter((t) => !hiddenRowIds.has(t.id)),
+    [rawTasks, hiddenRowIds]
+  );
+
+  // OPT-01: stable list props, so FlatList doesn't treat every keystroke
+  // (or any other unrelated re-render) as "everything about this list
+  // might have changed". keyExtractor still legitimately depends on
+  // restoreCounts (it needs to change when a task is restored); the
+  // others depend on nothing that changes outside of a real list update.
+  const keyExtractor = useCallback(
+    (item: Task) => `${item.id}:${restoreCounts[item.id] ?? 0}`,
+    [restoreCounts]
+  );
+
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<Task>) => (
+      <TaskRow task={item} onSwipeThreshold={beginComplete} onAnimationComplete={handleAnimationComplete} />
+    ),
+    [beginComplete, handleAnimationComplete]
+  );
+
+  const contentContainerStyle = useMemo(
+    () => [styles.listContent, tasks.length === 0 && styles.emptyContainer],
+    [tasks.length]
+  );
+
+  const showFallbackLink = mode === 'planning' && selectedView === 'today';
+  const footerElement = useMemo(
+    () =>
+      showFallbackLink ? (
+        <Pressable style={styles.fallbackLink} onPress={openCarrySheet}>
+          <Text style={styles.fallbackLinkText}>Move unfinished to tomorrow</Text>
+        </Pressable>
+      ) : null,
+    [showFallbackLink, openCarrySheet]
   );
 
   if (!isReady) {
     return <SafeAreaView style={styles.screen} />;
   }
 
-  const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
-  const tasks = rawTasks.filter((t) => !hiddenRowIds.has(t.id));
   const todayLabel = formatHeaderDate(parseDayKey(todayDay));
   const tomorrowLabel = formatHeaderDate(parseDayKey(tomorrowDay));
-  const showFallbackLink = mode === 'planning' && selectedView === 'today';
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Header
           todayLabel={todayLabel}
           tomorrowLabel={tomorrowLabel}
@@ -318,8 +354,8 @@ export default function HomeScreen() {
           Swipeable), racing against each other for the same tap. Closing
           on "tap outside" is handled entirely by
           keyboardShouldPersistTaps="handled" (a tap on a row never
-          auto-dismisses the keyboard) plus the keyboardDidHide listener
-          above (anything else -- empty list space, the header -- blurs
+          auto-dismisses the keyboard) plus InputBar's own keyboardDidHide
+          listener (anything else -- empty list space, the header -- blurs
           the TextInput natively, which closes the bar from there). Rows
           no longer have any tap handler at all (spec 3.2 v4: no editing),
           so this is now purely a leftover-risk note, not a live bug.
@@ -327,30 +363,16 @@ export default function HomeScreen() {
         <View style={styles.listArea}>
           <FlatList
             data={tasks}
-            // Includes the restore count (TASK_FIXES_07 item 0b) so a
-            // task Undo brings back gets a brand-new TaskRow instance,
-            // not a reused one still holding stale completion-animation
-            // state.
-            keyExtractor={(item) => `${item.id}:${restoreCounts[item.id] ?? 0}`}
+            keyExtractor={keyExtractor}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.listContent, tasks.length === 0 && styles.emptyContainer]}
+            contentContainerStyle={contentContainerStyle}
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
-            renderItem={({ item }) => (
-              <TaskRow task={item} onSwipeThreshold={beginComplete} onAnimationComplete={handleAnimationComplete} />
-            )}
-            ListFooterComponent={
-              showFallbackLink ? (
-                <Pressable style={styles.fallbackLink} onPress={openCarrySheet}>
-                  <Text style={styles.fallbackLinkText}>Move unfinished to tomorrow</Text>
-                </Pressable>
-              ) : null
-            }
+            renderItem={renderItem}
+            ListFooterComponent={footerElement}
           />
         </View>
 
-        {inputVisible ? (
-          <InputBar ref={inputRef} value={draft} onChangeText={setDraft} onSubmit={handleSubmit} />
-        ) : null}
+        {inputVisible ? <InputBar onAdd={handleAdd} onClose={handleInputClose} /> : null}
       </KeyboardAvoidingView>
 
       {!inputVisible ? <AddFab onPress={openInput} /> : null}

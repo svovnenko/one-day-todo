@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Animated, type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
@@ -35,8 +35,15 @@ const COLLAPSE_DURATION_MS = 200;
  * with a checkmark). No editing (spec 3.2 v4): a tap does nothing -- no
  * handler, no highlight, no feedback of any kind. A plain View, not a
  * Pressable, so there's nothing for a tap to trigger.
+ *
+ * Wrapped in React.memo (spec OPT-01): with the caller passing a stable
+ * `task` object reference (see src/logic/taskListDiff.ts) and stable
+ * `onSwipeThreshold`/`onAnimationComplete` callbacks (both useCallback'd
+ * with empty dependency arrays in app/index.tsx), this only re-renders
+ * when THIS row's own data actually changes, not on every keystroke in
+ * the input bar or every other row's swipe/completion.
  */
-export function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) {
+export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) {
   const [isCompleting, setIsCompleting] = useState(false);
   // Only applied once the collapse animation actually starts (see
   // `isCollapsing`) -- until then the row sizes itself naturally (via
@@ -122,7 +129,7 @@ export function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) 
       </Animated.View>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {

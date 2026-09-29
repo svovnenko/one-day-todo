@@ -7,6 +7,7 @@ import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
+import { reconcileTaskList } from '@/logic/taskListDiff';
 import { resolveView } from '@/logic/viewLock';
 
 export type View = 'today' | 'tomorrow';
@@ -161,10 +162,16 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     refreshTasks: () => {
-      const { todayDay, tomorrowDay } = get();
+      // OPT-01: reuses each task's previous object reference where its
+      // visible data hasn't changed -- listByDay() always builds fresh
+      // objects from SQLite rows, and handing those straight to
+      // React.memo(TaskRow) would defeat it (a "new" reference is a
+      // "changed" prop by React's default shallow comparison, even with
+      // identical contents).
+      const { todayDay, tomorrowDay, todayTasks, tomorrowTasks } = get();
       set({
-        todayTasks: tasksRepo.listByDay(todayDay),
-        tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+        todayTasks: reconcileTaskList(todayTasks, tasksRepo.listByDay(todayDay)),
+        tomorrowTasks: reconcileTaskList(tomorrowTasks, tasksRepo.listByDay(tomorrowDay)),
       });
     },
 
