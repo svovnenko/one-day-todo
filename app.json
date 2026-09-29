@@ -38,6 +38,19 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "917144a2-942d-42c8-8961-3ba4998464f9"
+      }
+    },
+    "owner": "drinkins11",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/917144a2-942d-42c8-8961-3ba4998464f9"
     }
   }
 }
