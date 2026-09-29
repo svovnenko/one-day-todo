@@ -66,10 +66,10 @@ type AppState = {
    * True when evaluateCarryPrompt's conditions are met but the sheet
    * hasn't been revealed yet. Kept separate from carrySheetVisible so the
    * store never presents the sheet itself -- the main screen decides WHEN
-   * to reveal it (only while focused and the app is active), which is
-   * what fixed the freeze in TASK_FIXES_03 (an RN Modal shown while a
-   * native screen transition / AppState transition is in flight could get
-   * stuck as an invisible layer swallowing all touches on iOS).
+   * to reveal it (only while focused and the app is active): presenting
+   * it while a native screen transition or AppState transition is in
+   * flight could otherwise leave an invisible layer swallowing every
+   * touch on iOS.
    */
   carryPromptDue: boolean;
 
@@ -207,9 +207,9 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     refreshTasks: () => {
-      // OPT-01: reuses each task's previous object reference where its
-      // visible data hasn't changed -- listByDay() always builds fresh
-      // objects from SQLite rows, and handing those straight to
+      // Reuses each task's previous object reference where its visible
+      // data hasn't changed -- listByDay() always builds fresh objects
+      // from SQLite rows, and handing those straight to
       // React.memo(TaskRow) would defeat it (a "new" reference is a
       // "changed" prop by React's default shallow comparison, even with
       // identical contents).

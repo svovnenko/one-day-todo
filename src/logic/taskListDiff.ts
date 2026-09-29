@@ -1,9 +1,9 @@
 import type { Task } from '@/db/tasksRepo';
 
 /**
- * True when two task rows carry the same visible data (spec OPT-01: id,
- * text, position and carry count -- the fields a row actually renders or
- * that affect list order). `day`/`createdAt` are deliberately excluded:
+ * True when two task rows carry the same visible data (id, text,
+ * position and carry count -- the fields a row actually renders or that
+ * affect list order). `day`/`createdAt` are deliberately excluded:
  * `day` only ever changes together with `position`/`carryCount` (a
  * carry-over move), and `createdAt` never changes after insertion, so
  * comparing them would add nothing.

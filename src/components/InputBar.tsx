@@ -22,11 +22,11 @@ type Props = {
  * "none") when adding; text is saved exactly as typed. Adding is the only
  * use of this bar -- tasks can't be edited (spec 3.2 v4).
  *
- * Owns its own `draft` state and keyboardDidHide handling (spec OPT-01).
- * Previously both lived in the parent screen, so every keystroke
- * re-rendered the whole screen -- including the task FlatList and every
- * visible TaskRow/Swipeable. Keeping them here means a keystroke only
- * re-renders this one small component.
+ * Owns its own `draft` state and keyboardDidHide handling: lifting them
+ * to the parent screen would re-render it on every keystroke --
+ * including the task FlatList and every visible TaskRow/Swipeable.
+ * Keeping them here means a keystroke only re-renders this one small
+ * component.
  */
 export function InputBar({ onAdd, onClose }: Props) {
   const [draft, setDraft] = useState('');
@@ -37,12 +37,11 @@ export function InputBar({ onAdd, onClose }: Props) {
   const inputRef = useRef<TextInput>(null);
   // Guards against this bar's own Keyboard.dismiss() (in the parent's
   // onClose handling) re-triggering this same keyboardDidHide listener a
-  // second time. A plain boolean suffices (rather than the session-id
-  // counter app/index.tsx used before this refactor -- TASK_FIXES_04/05):
-  // this component mounts fresh for every "open" (the parent only renders
-  // it while visible) and is done for good the moment it closes, so there
-  // is only ever one close to guard against per mount, never a second
-  // session to distinguish from a stale first one.
+  // second time. A plain boolean suffices: this component mounts fresh
+  // for every "open" (the parent only renders it while visible) and is
+  // done for good the moment it closes, so there is only ever one close
+  // to guard against per mount, never a second session to distinguish
+  // from a stale first one.
   const isClosingRef = useRef(false);
 
   useEffect(() => {

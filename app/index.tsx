@@ -16,9 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Android needs this opted in explicitly; iOS supports LayoutAnimation by
 // default. Belt-and-suspenders alongside TaskRow's own height-collapse
-// animation (TASK_FIXES_06): by the time a row actually leaves `tasks`
-// below, its own animation has already brought it to zero height/opacity,
-// so this mainly guards against any residual snap in whatever's left.
+// animation: by the time a row actually leaves `tasks` below, its own
+// animation has already brought it to zero height/opacity, so this
+// mainly guards against any residual snap in whatever's left.
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
@@ -71,10 +71,10 @@ export default function HomeScreen() {
     useInputSession(flagScrollToEnd);
 
   useEffect(() => {
-    // OPT-01: never leave the app stuck on the native splash screen if
-    // this throws -- log it and let the (still-rendered, blank) screen
-    // show instead; the safety-net timer in app/_layout.tsx hides the
-    // splash regardless after a few seconds either way.
+    // Never leave the app stuck on the native splash screen if this
+    // throws -- log it and let the (still-rendered, blank) screen show
+    // instead; the safety-net timer in app/_layout.tsx hides the splash
+    // regardless after a few seconds either way.
     try {
       init();
     } catch (error) {
@@ -82,11 +82,11 @@ export default function HomeScreen() {
     }
   }, [init]);
 
-  // OPT-01: hides the launch splash the moment the store is ready, so the
-  // splash goes straight to the real list instead of to a blank white
-  // frame while `!isReady` (that blank frame is still the fallback if
-  // init() above throws before ever setting isReady, which is what the
-  // 3s safety-net timer in app/_layout.tsx is for).
+  // Hides the launch splash the moment the store is ready, so the splash
+  // goes straight to the real list instead of to a blank white frame
+  // while `!isReady` (that blank frame is still the fallback if init()
+  // above throws before ever setting isReady, which is what the 3s
+  // safety-net timer in app/_layout.tsx is for).
   useEffect(() => {
     if (isReady) hideSplashOnce();
   }, [isReady]);
@@ -149,8 +149,8 @@ export default function HomeScreen() {
   }, [undoPending]);
 
   // Skip, the backdrop tap, and Move must always hide the sheet, even if
-  // the store update itself throws (TASK_FIXES_03) -- hideCarrySheet is a
-  // single, unconditional state set that can't fail the same way.
+  // the store update itself throws -- hideCarrySheet is a single,
+  // unconditional state set that can't fail the same way.
   const handleSkipCarrySheet = useCallback(() => {
     try {
       skipCarrySheet();
@@ -277,18 +277,15 @@ export default function HomeScreen() {
         />
 
         {/*
-          No "tap outside to close" Pressable wraps this list (see
-          TASK_FIXES_04): one used to, with onPress={closeInput}, but a
-          tap on a row could reach BOTH it and the row's own touch handling
-          (different touch systems -- rows sit inside a gesture-handler
-          Swipeable), racing against each other for the same tap. Closing
-          on "tap outside" is handled entirely by
+          Deliberately no "tap outside to close" Pressable wraps this
+          list: a tap on a row would reach BOTH it and the row's own
+          touch handling (different touch systems -- rows sit inside a
+          gesture-handler Swipeable), racing each other for the same tap.
+          Closing on "tap outside" is handled entirely by
           keyboardShouldPersistTaps="handled" (a tap on a row never
           auto-dismisses the keyboard) plus InputBar's own keyboardDidHide
-          listener (anything else -- empty list space, the header -- blurs
-          the TextInput natively, which closes the bar from there). Rows
-          no longer have any tap handler at all (spec 3.2 v4: no editing),
-          so this is now purely a leftover-risk note, not a live bug.
+          listener (anything else -- empty list space, the header --
+          blurs the TextInput natively, which closes the bar from there).
         */}
         <View style={styles.listArea} onLayout={handleListAreaLayout}>
           <FlatList

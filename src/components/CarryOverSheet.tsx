@@ -23,8 +23,8 @@ const SHEET_OFFSCREEN_OFFSET = 320;
  * no checkboxes or circles. Tapping a row selects it (black text, black
  * checkmark); a full-width black `Move N` and a grey `Let them go`.
  *
- * Deliberately NOT a React Native <Modal> (see TASK_FIXES_03): presenting
- * a native Modal while another native transition is in flight -- the
+ * Deliberately NOT a React Native <Modal>: presenting a native Modal
+ * while another native transition is in flight -- the
  * Settings screen (a native-stack `presentation: 'modal'`) dismissing, or
  * an AppState change around a notification tap -- could leave an
  * invisible modal layer on iOS that swallows every touch and freezes the

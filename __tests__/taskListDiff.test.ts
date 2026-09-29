@@ -1,9 +1,9 @@
 import { reconcileTaskList } from '@/logic/taskListDiff';
 import type { Task } from '@/db/tasksRepo';
 
-// Spec OPT-01: refreshTasks() must not hand out fresh object references
-// for tasks whose visible data hasn't actually changed, or
-// React.memo(TaskRow) can't skip re-rendering them.
+// refreshTasks() must not hand out fresh object references for tasks
+// whose visible data hasn't actually changed, or React.memo(TaskRow)
+// can't skip re-rendering them.
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {

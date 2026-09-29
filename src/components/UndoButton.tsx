@@ -19,12 +19,12 @@ type Props = {
   onUndo: () => void;
 };
 
-const SIZE = 96; // v4 (TASK_FIXES_06): bumped from 64pt (1.5x)
+const SIZE = 96;
 const STROKE_WIDTH = 4;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const EXIT_FADE_MS = 200;
-const BOTTOM_OFFSET = 80; // v4 (TASK_FIXES_06): raised above the + FAB (was level with it)
+const BOTTOM_OFFSET = 80;
 
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 

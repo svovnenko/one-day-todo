@@ -12,7 +12,7 @@ import { colors } from '@/theme';
 // Runs once at import time, before any screen mounts.
 configureNotificationHandler();
 
-// OPT-01: keeps the native splash up past its own auto-hide (which would
+// Keeps the native splash up past its own auto-hide (which would
 // otherwise happen as soon as the first frame draws) until HomeScreen's
 // isReady effect calls hideSplashOnce() -- so the splash goes straight to
 // the real list instead of to a blank white frame while the store is

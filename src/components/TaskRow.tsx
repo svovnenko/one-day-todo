@@ -9,18 +9,17 @@ import { colors, layout, type } from '@/theme';
 type Props = {
   task: Task;
   /**
-   * Fires the instant the swipe crosses the threshold (spec 3.2/4,
-   * TASK_FIXES_04): the caller should start the Undo window right away
-   * (the Undo button must appear immediately, not ~500ms later once this
-   * row's own animation finishes).
+   * Fires the instant the swipe crosses the threshold (spec 3.2/4): the
+   * caller should start the Undo window right away (the Undo button
+   * must appear immediately, not ~500ms later once this row's own
+   * animation finishes).
    */
   onSwipeThreshold: (task: Task) => void;
   /**
    * Fires once this row's entire completion animation (strike-through,
    * fade, height collapse) has fully played out. The caller should only
    * now actually remove the row from whatever list it renders --
-   * removing it earlier would cut the animation short and/or leave a gap
-   * (TASK_FIXES_06).
+   * removing it earlier would cut the animation short and/or leave a gap.
    */
   onAnimationComplete: (task: Task) => void;
 };
@@ -36,7 +35,7 @@ const COLLAPSE_DURATION_MS = 200;
  * handler, no highlight, no feedback of any kind. A plain View, not a
  * Pressable, so there's nothing for a tap to trigger.
  *
- * Wrapped in React.memo (spec OPT-01): with the caller passing a stable
+ * Wrapped in React.memo: with the caller passing a stable
  * `task` object reference (see src/logic/taskListDiff.ts) and stable
  * `onSwipeThreshold`/`onAnimationComplete` callbacks (both useCallback'd
  * with empty dependency arrays in app/index.tsx), this only re-renders
@@ -48,11 +47,11 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
   // Only applied once the collapse animation actually starts (see
   // `isCollapsing`) -- until then the row sizes itself naturally (via
   // styles.row's minHeight), so there's a real measured height to collapse
-  // FROM once completion begins. TASK_FIXES_06: without this, removing the
-  // row from the list left a permanent row-height gap -- the row's own
-  // Animated.View had faded to opacity 0, but opacity never affects layout,
-  // so it kept reserving its full height until (if ever) it actually left
-  // the rendered list.
+  // FROM once completion begins. Without this, removing the row from the
+  // list left a permanent row-height gap -- the row's own Animated.View
+  // had faded to opacity 0, but opacity never affects layout, so it kept
+  // reserving its full height until (if ever) it actually left the
+  // rendered list.
   const [isCollapsing, setIsCollapsing] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const height = useRef(new Animated.Value(0)).current;
