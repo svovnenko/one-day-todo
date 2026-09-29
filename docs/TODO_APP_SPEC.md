@@ -197,31 +197,43 @@ CREATE TABLE IF NOT EXISTS settings (
 
 ```
 app/
-  _layout.tsx          # Stack + GestureHandlerRootView; runs init (db, rollover, notifications) before rendering
-  index.tsx            # Main list screen (header, list, FAB, input bar, undo pill, carry-over sheet)
-  settings.tsx         # Modal: schedule
+  _layout.tsx              # Stack + GestureHandlerRootView; runs init (db, rollover, notifications) before rendering
+  index.tsx                # Main list screen: layout, list/undo/carry-sheet wiring, delegates to src/hooks
+  settings.tsx             # Modal: schedule (planning time, day-end time, reminder toggle)
 src/
   db/
-    database.ts        # open db, migrations
-    tasksRepo.ts       # listByDay, add, updateText, remove, restore, moveToDay, purgeBefore, replaceAll
-    settingsRepo.ts    # get/set settings
+    database.ts            # open db, migrations
+    tasksRepo.ts           # listByDay, add, remove, removeMany, findByDayAndText, moveToDay, setCarryCount, purgeBefore
+    settingsRepo.ts        # get/set settings
   store/
-    useAppStore.ts     # Zustand: tasks by day, selectedView, mode, settings, pendingUndo, actions
+    useAppStore.ts         # Zustand: tasks by day, selectedView, mode, settings, completion/pendingBatch, actions
   logic/
-    dates.ts           # logicalDate(now,E), tomorrowOf(), offset(), isPlanningMode(now,P,E), msUntilNext(now,'HH:mm'), formatHeader()
-    rollover.ts        # runRollover(): commit pending undo, purgeBefore(today), recompute mode
-    carryOver.ts       # shouldShowCarryPrompt(), defaultChecked(task), moveTasks(ids)
-    notifications.ts   # requestPermission(), scheduleDailyReminder(P), cancelAll()
+    dates.ts               # logical day/E/P math, formatting, validation -- pure functions of (now, settings)
+    rollover.ts            # planRollover(): recompute today/tomorrow day keys and mode
+    carryOver.ts           # shouldShowCarryPrompt(), isBlockedFromMoving(), movableTaskCount(), moveTasks()
+    completion.ts          # batchCompletesToday(), visibleTasks(), excludeCompleting() -- pure selectors over `completion`
+    completionBatch.ts     # CompletionBatch: the pending-undo batch's timer + per-task completion/restoreVersion state
+    footer.ts              # footerLines(): the "list full" / carry-over footer lines, as one pure decision table
+    limits.ts              # OPEN_TASK_LIMIT, MAX_CARRY_COUNT and the isListFull()/freeSlots() checks
+    taskListDiff.ts        # reconcileTaskList(): reuses unchanged task references so React.memo(TaskRow) can skip renders
+    viewLock.ts            # resolveView(): Tomorrow is locked in day mode
+    notifications.ts       # permission + scheduling for the daily "Plan tomorrow" reminder
+    splash.ts              # hideSplashOnce(): idempotent native-splash dismissal
   hooks/
-    useDayClock.ts     # AppState listener + timers to next E and next P → rollover / mode refresh
+    useDayClock.ts         # AppState listener + timers to next E and next P -> rollover / mode refresh
+    useInputSession.ts     # input bar open/close state and every add path (Return, keyboard-hide)
+    useAutoScroll.ts       # scrolls to a newly added row when it isn't already visible
+    useCarrySheetReveal.ts # reveals the carry-over sheet once focused and the app is active
+    useFooterLines.ts      # wires footerLines() to its store selectors
   components/
-    Header.tsx
-    TaskRow.tsx        # swipe right → complete; tap does nothing; shows ×N
-    UndoPill.tsx
-    AddFab.tsx
-    InputBar.tsx
-    CarryOverSheet.tsx
-__tests__/             # jest-expo unit tests for src/logic/*
+    Header.tsx             # Today/Tomorrow labels + the settings gear
+    TaskRow.tsx            # swipe right -> complete; tap does nothing; shows ×N
+    AddFab.tsx             # the + button; dims and shakes (with a haptic) when the list is full
+    InputBar.tsx           # the docked text input; owns its own draft/keyboard state
+    UndoButton.tsx         # the round Undo button with its countdown ring
+    CarryOverSheet.tsx     # the "move unfinished to tomorrow" bottom sheet
+  theme.ts                 # colors/layout/type design tokens
+__tests__/                 # jest-expo unit tests for src/logic/* (and completionBatch's timer-driven state machine)
 ```
 
 **Rule:** keep all date and time logic in `src/logic/dates.ts` as pure functions that take `now: Date` and the settings, so it can be unit tested.
@@ -259,6 +271,8 @@ __tests__/             # jest-expo unit tests for src/logic/*
 
 ## 8. Development plan (milestones)
 
+Milestones 1-9 are done.
+
 1. **Scaffold:** `npx create-expo-app@latest one-day-todo` (TypeScript + Expo Router template); `git init`; push to a private GitHub repo; set `userInterfaceStyle: light`; run in Expo Go.
 2. **Data layer:** SQLite schema, repos, and the Zustand store; add/list/delete working.
 3. **Main screen UI:** header, rows (pixel-matched to the spec), FAB, input bar, empty state.
@@ -268,7 +282,8 @@ __tests__/             # jest-expo unit tests for src/logic/*
 7. **Settings modal** and notifications.
 8. ~~Backup export/import~~ (removed in v3).
 9. **Polish and test** on the iPhone against section 7.
-10. *(Later, postponed)* EAS store build or development build.
+10. **Fix rounds 01-11 and REFACTOR-01** (see `docs/tasks/`): device-test bug fixes, the auto-scroll/task-limit/move-limit spec bump, the move sheet redesign, and a structure-only refactor of the completion/Undo flow, `app/index.tsx`'s hooks, comments, dead code and repo layout. Done.
+11. *(Next, postponed)* Android APK / store build, or an EAS development build.
 
 Commit and push after each milestone.
 
