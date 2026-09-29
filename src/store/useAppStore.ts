@@ -5,6 +5,7 @@ import * as tasksRepo from '@/db/tasksRepo';
 import { BatchUndoScheduler } from '@/logic/batchUndoScheduler';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
+import { isListFull } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
 import { reconcileTaskList } from '@/logic/taskListDiff';
@@ -61,8 +62,14 @@ type AppState = {
   init: () => void;
   /** Re-reads today/tomorrow's tasks from SQLite into state. */
   refreshTasks: () => void;
-  /** In day mode, a 'tomorrow' target is redirected to today -- Tomorrow doesn't exist yet (spec 3.1). */
-  addTask: (view: View, text: string) => void;
+  /**
+   * In day mode, a 'tomorrow' target is redirected to today -- Tomorrow
+   * doesn't exist yet (spec 3.1). Returns false (and adds nothing) if the
+   * target list is already at OPEN_TASK_LIMIT (spec 3.2 v5) -- the caller
+   * is expected to have already checked this in the common case, but the
+   * store enforces it too as a safety net.
+   */
+  addTask: (view: View, text: string) => boolean;
   /**
    * Adds a task to the pending batch and restarts its UNDO_WINDOW_MS
    * timer -- it does NOT commit whatever was already pending (spec 3.2
@@ -177,11 +184,14 @@ export const useAppStore = create<AppState>((set, get) => {
 
     addTask: (view, text) => {
       const trimmed = sanitizeTaskText(text);
-      if (!trimmed) return;
-      const { todayDay, tomorrowDay, mode } = get();
+      if (!trimmed) return false;
+      const { todayDay, tomorrowDay, mode, todayTasks, tomorrowTasks } = get();
       const effectiveView = resolveView(view, mode);
-      tasksRepo.add(effectiveView === 'today' ? todayDay : tomorrowDay, trimmed);
+      const isToday = effectiveView === 'today';
+      if (isListFull(isToday ? todayTasks.length : tomorrowTasks.length)) return false;
+      tasksRepo.add(isToday ? todayDay : tomorrowDay, trimmed);
       get().refreshTasks();
+      return true;
     },
 
     beginComplete: (task) => {

@@ -1,11 +1,12 @@
 import { useIsFocused, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
+  LayoutChangeEvent,
   ListRenderItemInfo,
   Platform,
   Pressable,
@@ -34,6 +35,7 @@ import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
 import type { Task } from '@/db/tasksRepo';
 import { useDayClock } from '@/hooks/useDayClock';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
+import { isListFull } from '@/logic/limits';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
@@ -73,6 +75,20 @@ export default function HomeScreen() {
   // that's needed instead of trying to reset the row's animated state
   // in place.
   const [restoreCounts, setRestoreCounts] = useState<Record<string, number>>({});
+  // Spec 3.2 v5: shows "10 tasks max. Finish one first." above the FAB for
+  // a couple of seconds -- fired by the FAB, InputBar's Return key, and
+  // the keyboard-hide/draft path, all funneled through showListFullMessage.
+  const [showFullMessage, setShowFullMessage] = useState(false);
+  const fullMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Spec 3.3 v5 (auto-scroll): set right after a successful add, consumed
+  // by the FlatList's onContentSizeChange below. listAreaHeightRef tracks
+  // the list container's OWN layout height (via its onLayout), which
+  // already shrinks when KeyboardAvoidingView makes room for the keyboard
+  // -- so the "is the content taller than what's visible" check below
+  // naturally accounts for the keyboard/input bar without any extra logic.
+  const listRef = useRef<FlatList<Task>>(null);
+  const scrollToNewPendingRef = useRef(false);
+  const listAreaHeightRef = useRef(0);
 
   useEffect(() => {
     // OPT-01: never leave the app stuck on the native splash screen if
@@ -118,6 +134,13 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [carryPromptDue, isFocused, showCarrySheetIfDue]);
 
+  // Cleans up the "list full" message's auto-hide timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (fullMessageTimerRef.current) clearTimeout(fullMessageTimerRef.current);
+    };
+  }, []);
+
   // Garbage-collects hiddenRowIds: once a task is actually gone from the
   // store's data (deleted for real, e.g. after the Undo window commits),
   // there's no point remembering it was "visually hidden".
@@ -130,32 +153,88 @@ export default function HomeScreen() {
     });
   }, [todayTasks, tomorrowTasks]);
 
-  /**
-   * Return, from InputBar: add to whichever list is currently selected.
-   * Reads selectedView from the live store rather than this render's
-   * closure -- InputBar itself never re-renders on unrelated screen
-   * updates (that's the whole point of OPT-01), so there's no guaranteed
-   * re-render to refresh a captured `selectedView` if the mode flips
-   * while the bar is open. useAppStore.getState() sidesteps that (same
-   * technique as TASK_FIXES_07 item 0).
-   */
-  const handleAdd = useCallback((text: string) => {
-    addTask(useAppStore.getState().selectedView, text);
-  }, [addTask]);
+  const showListFullMessage = useCallback(() => {
+    if (fullMessageTimerRef.current) clearTimeout(fullMessageTimerRef.current);
+    setShowFullMessage(true);
+    fullMessageTimerRef.current = setTimeout(() => setShowFullMessage(false), 2000);
+  }, []);
 
-  /** InputBar's keyboard hid: save a non-empty draft, then close. */
+  /**
+   * Tries to add `text` to whichever list is currently selected (read live
+   * from the store, same reasoning as before this task: InputBar never
+   * re-renders on unrelated updates, so a closed-over `selectedView` could
+   * be stale). Returns whether the input bar should stay open: false both
+   * when the list was already full (the store refused, or our own
+   * pre-check caught it -- either way the draft is discarded per spec
+   * 3.2 v5) and when this add was the one that just reached the limit
+   * (closes the bar too, per spec). On any real add, flags the next
+   * FlatList content-size change to scroll the new row into view.
+   */
+  const attemptAdd = useCallback(
+    (text: string): boolean => {
+      const view = useAppStore.getState().selectedView;
+      const countBefore = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
+      if (isListFull(countBefore)) {
+        showListFullMessage();
+        return false;
+      }
+      if (!addTask(view, text)) {
+        showListFullMessage(); // safety net -- the store refused despite the pre-check above
+        return false;
+      }
+      scrollToNewPendingRef.current = true;
+      const countAfter = view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
+      if (isListFull(countAfter)) {
+        showListFullMessage();
+        return false;
+      }
+      return true;
+    },
+    [addTask, showListFullMessage]
+  );
+
+  /** Return, from InputBar: add, and close the bar if that just filled the list. */
+  const handleAdd = useCallback(
+    (text: string) => {
+      if (!attemptAdd(text)) {
+        Keyboard.dismiss();
+        setInputVisible(false);
+      }
+    },
+    [attemptAdd]
+  );
+
+  /** InputBar's keyboard hid: save a non-empty draft (unless the list is full), then close. */
   const handleInputClose = useCallback(
     (text: string) => {
-      if (text.trim().length > 0) {
-        addTask(useAppStore.getState().selectedView, text);
-      }
+      if (text.trim().length > 0) attemptAdd(text);
       Keyboard.dismiss(); // formality -- it's normally already hidden, since that's what triggered this
       setInputVisible(false);
     },
-    [addTask]
+    [attemptAdd]
   );
 
-  const openInput = useCallback(() => setInputVisible(true), []);
+  const isCurrentListFull = isListFull(selectedView === 'today' ? todayTasks.length : tomorrowTasks.length);
+
+  const handleFabPress = useCallback(() => {
+    if (isCurrentListFull) {
+      showListFullMessage();
+      return;
+    }
+    setInputVisible(true);
+  }, [isCurrentListFull, showListFullMessage]);
+
+  const handleListAreaLayout = useCallback((e: LayoutChangeEvent) => {
+    listAreaHeightRef.current = e.nativeEvent.layout.height;
+  }, []);
+
+  const handleContentSizeChange = useCallback((_width: number, height: number) => {
+    if (!scrollToNewPendingRef.current) return;
+    scrollToNewPendingRef.current = false;
+    if (height > listAreaHeightRef.current) {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, []);
 
   /**
    * This row's own completion animation (strike-through, fade, collapse)
@@ -360,8 +439,9 @@ export default function HomeScreen() {
           no longer have any tap handler at all (spec 3.2 v4: no editing),
           so this is now purely a leftover-risk note, not a live bug.
         */}
-        <View style={styles.listArea}>
+        <View style={styles.listArea} onLayout={handleListAreaLayout}>
           <FlatList
+            ref={listRef}
             data={tasks}
             keyExtractor={keyExtractor}
             keyboardShouldPersistTaps="handled"
@@ -369,18 +449,22 @@ export default function HomeScreen() {
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
             renderItem={renderItem}
             ListFooterComponent={footerElement}
+            onContentSizeChange={handleContentSizeChange}
           />
         </View>
 
         {inputVisible ? <InputBar onAdd={handleAdd} onClose={handleInputClose} /> : null}
       </KeyboardAvoidingView>
 
-      {!inputVisible ? <AddFab onPress={openInput} /> : null}
+      {!inputVisible ? (
+        <AddFab onPress={handleFabPress} isFull={isCurrentListFull} showMessage={showFullMessage} />
+      ) : null}
       <UndoButton batch={undoBatchInfo} onUndo={handleUndo} />
 
       <CarryOverSheet
         visible={carrySheetVisible}
         tasks={todayUnfinishedTasks}
+        tomorrowTasks={tomorrowTasks}
         onMove={handleMoveCarryOverTasks}
         onSkip={handleSkipCarrySheet}
       />

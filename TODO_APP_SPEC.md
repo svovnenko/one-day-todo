@@ -1,6 +1,6 @@
 # One-Day To-Do — Product & Technical Spec
 
-> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v4: after the business-analyst review and three rounds of device testing).
+> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v6: "Done for today", evening re-commit).
 > Build exactly this; anything not listed is out of scope. When in doubt, choose the simpler option.
 
 ---
@@ -71,6 +71,11 @@ The target user is the owner only (single user, a personal app).
 ### 3.2 Tasks
 - A task is **text only** (single line, trimmed, 1–200 chars; empty input is ignored).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
+- **Open-task limit (v5):** each list (Today, Tomorrow) holds at most **10 open tasks**. Tasks in the pending Undo batch still count until the batch commits, so Undo can never push a list over 10. When a list is full:
+  - the + FAB is greyed out (40% opacity);
+  - tapping it shows a small grey message above it for 2s: `10 tasks max. Finish one first.`;
+  - if the input bar is open when the 10th task is added, the bar closes and the same message shows.
+  - Lists that are already over 10 (older data) are left alone; you just can't add until they drop below 10.
 - **Swipe right** on a task → it completes:
   - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then fades (150ms) and **its height collapses to 0 (about 200ms)**, so the rows below slide up. No empty gap is ever left in the list, including during the Undo window. Undo re-inserts the row at its original position.
   - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 96pt, dark `#1C1C1E`, shows only the white text **`Undo`** (22pt, semibold) with no icon, and sits at the bottom center, **raised: its bottom edge 80pt above the bottom safe area** (the button center is about 130pt from the bottom, above the + FAB).
@@ -87,13 +92,16 @@ The target user is the owner only (single user, a personal app).
 - Tapping it opens a **text input bar docked above the keyboard** (placeholder: `New task`).
 - The keyboard starts in **lowercase** (`autoCapitalize="none"`) when adding. The text is saved exactly as typed.
 - **Return** adds the task, clears the field, and **keeps the keyboard open** for fast entry of several lines.
+- **Auto-scroll (v5):** after a task is added, if its row isn't fully visible above the input bar or keyboard, the list scrolls (animated) just enough to show it. If the list fits on screen, nothing moves.
 - The input bar closes whenever the keyboard hides (tap outside, keyboard dismiss, swipe down, leaving the screen). Any non-empty text is saved first.
 
 ### 3.4 Carry-over (moving unfinished tasks) + counter
 - When the app is active **in planning mode**, today has **≥1 unfinished task**, and the prompt hasn't been shown yet for this logical day, show a **bottom sheet**:
   - Title: `Move unfinished to tomorrow?`
   - A list of today's unfinished tasks, each with a checkbox and its counter if it has one.
-  - Checked by default, **except tasks with `carry_count >= 3`**, which start unchecked (a nudge to drop them or do them now).
+  - **Evening re-commit (v6, default effect):** **every task starts unchecked.** Moving a task is always a conscious choice. The earlier "unchecked from ×3" nudge is no longer needed.
+  - **Move limit (v5):** a task with `carry_count >= 5` **can't be moved again**. It shows greyed out, with a disabled checkbox and the note `can't move again`. It stays in Today and is deleted at day end if not done.
+  - **Tomorrow's slots (v5):** the sheet shows `Tomorrow: N free` under the title, where N = 10 minus tomorrow's open tasks. At most N tasks can be checked: once N are checked, the other checkboxes are disabled until one is unchecked. If N = 0, `Move` is disabled.
   - Buttons: `Move` (primary) and `Skip`
 - **Move** transfers the checked tasks: they are deleted from Today and appended to Tomorrow with **`carry_count + 1`**.
   - If a task with the exact same text already exists in Tomorrow, don't duplicate it. Set that existing task's `carry_count = max(existing, moved + 1)`.
@@ -148,6 +156,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | Undo button | Round, 96pt, bottom center, bottom edge 80pt above the bottom safe area (center about 130pt up), `#1C1C1E`, white text `Undo` 22pt semibold, centred, no icon. A white 4pt countdown ring empties over 2s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
+| "Done for today" (v6) | In the **Today** view, when the list is empty **and at least one task was completed today** (a batch committed on this logical day), show a centered grey 17pt `Done for today.` instead of the empty state. There is no animation, icon or sound. The Tomorrow view always uses the normal empty state. |
 | Carry-over sheet | White bottom sheet with a rounded top (16pt), a simple checkbox list, and full-width black `Move` and grey text `Skip` buttons |
 | Dark mode | **Off**: set `"userInterfaceStyle": "light"` in `app.json` |
 
@@ -172,10 +181,10 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- keys: planningTime ('20:00'), dayEndTime ('04:00'), reminderEnabled ('1'), lastCarryPromptDate ('YYYY-MM-DD')
+-- keys: planningTime ('20:00'), dayEndTime ('04:00'), reminderEnabled ('1'), lastCarryPromptDate ('YYYY-MM-DD'), lastCompletedDate ('YYYY-MM-DD', v6)
 ```
 
-- There is no `done` column. Completion is pending in memory during the 4-second undo window, then the row is deleted. If the app is killed during the window, the task survives, which is the safe failure.
+- There is no `done` column. Completion is pending in memory during the 2-second undo window, then the row is deleted. If the app is killed during the window, the task survives, which is the safe failure.
 - Date keys are built manually from `getFullYear/getMonth/getDate`. **Never** use `toISOString()`, which returns UTC.
 - Use `PRAGMA user_version` for migrations (v1 = the schema above).
 
@@ -224,11 +233,11 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 2 | Swipe right on a task | It is struck through and removed; the round Undo button appears immediately with a 2s countdown ring; the task is still gone after an app restart |
 | 3 | Swipe right, then tap Undo | The task returns to its original position |
 | 4 | Complete tasks A, B and C within 2s of each other, then tap Undo | All three come back in their original positions; the button showed the count 3 |
-| 5 | Tap a task, change the text, save | The text is updated; nothing is completed |
+| 5 | Tap a task | Nothing happens (no editing) |
 | 6 | Open the app at 14:00 | Today is selected; there is **no Tomorrow label** and no way to reach Tomorrow |
-| 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 checked tasks |
+| 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 **unchecked** tasks |
 | 8 | Move a task that has `carry_count` 0 | It appears in Tomorrow as `Task ×1` |
-| 9 | A task with ×3 appears in the carry-over sheet | It is unchecked by default |
+| 9 | A task with ×5 appears in the carry-over sheet | It is greyed out with `can't move again` and can't be checked |
 | 10 | Tap Skip, then reopen the app | The sheet does not reappear; the fallback link is visible in the Today view |
 | 11 | Open the app at 01:30 (E=04:00) | Still the same logical day: the header shows yesterday's calendar date as "Today"; the lists are unchanged; planning mode |
 | 12 | Open the app at 04:10 | The old today's tasks are gone; the former Tomorrow is now Today; day mode |
@@ -240,6 +249,8 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 20 | Swipe a row right past the threshold and release | The row completes (strike-through, collapse, Undo pill). It **never** stays open showing the grey zone and checkmark. |
 | 21 | Swipe a row a little and release | The row snaps back closed |
 | 22 | Tap + and type `buy milk` | The first letter stays lowercase |
+| 23 | Complete every task in Today | `Done for today.` is shown |
+| 24 | Open a new day with an empty Today (nothing completed yet) | `Nothing here. Tap + to add.` is shown |
 
 ---
 
@@ -290,7 +301,14 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Store/dev build | **Postponed**. Code backup via git/GitHub |
 | Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo button (2s) |
 | Home/lock screen widget | **Rejected** |
-| Soft task-limit hint | **Rejected** |
+| Soft task-limit hint | **Rejected** (v2). Replaced in v5 by a hard limit of 10 **open** tasks per list |
+| Move limit | **Accepted (v5)**: max 5 moves |
+| "Done for today." closure line | **Accepted (v6)**: the only "reward" is the empty list, named |
+| Evening re-commit (all unchecked) | **Accepted (v6)**: replaces the ×3 nudge |
+| "Most important first" placeholder | **Rejected (v6)** |
+| Reminder text / 21:00 default | **Rejected (v6)**: keep `Plan tomorrow` / `Write tomorrow's list.` at 20:00 |
+| Streaks, stats, badges, confetti, categories, Pomodoro, morning reminder | **Rejected (v6)**: they break the "empty list is the only reward" spirit |
+| Auto-scroll to a new task | **Accepted (v5)** |
 
 ## 11. Out of scope (do NOT build)
 
