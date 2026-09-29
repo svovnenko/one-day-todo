@@ -8,7 +8,6 @@
     "scheme": "onedaytodo",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "userInterfaceStyle": "light"
