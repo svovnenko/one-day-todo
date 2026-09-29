@@ -8,6 +8,7 @@ describe('planRollover', () => {
     expect(plan).toEqual({
       todayDay: '2026-09-29',
       tomorrowDay: '2026-09-30',
+      mode: 'day',
       defaultView: 'today',
     });
   });
@@ -17,6 +18,7 @@ describe('planRollover', () => {
     expect(plan).toEqual({
       todayDay: '2026-09-29',
       tomorrowDay: '2026-09-30',
+      mode: 'planning',
       defaultView: 'tomorrow',
     });
   });
@@ -26,6 +28,7 @@ describe('planRollover', () => {
     expect(plan).toEqual({
       todayDay: '2026-09-29',
       tomorrowDay: '2026-09-30',
+      mode: 'planning',
       defaultView: 'tomorrow',
     });
   });
@@ -35,6 +38,7 @@ describe('planRollover', () => {
     expect(plan).toEqual({
       todayDay: '2026-09-30',
       tomorrowDay: '2026-10-01',
+      mode: 'day',
       defaultView: 'today',
     });
   });

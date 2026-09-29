@@ -10,6 +10,8 @@ export type RolloverPlan = {
   todayDay: string;
   /** Logical-date key for "tomorrow" after this rollover. */
   tomorrowDay: string;
+  /** Whether we're currently in day mode or planning mode (spec 3.1). */
+  mode: 'day' | 'planning';
   /** The mode-default view to reset to (spec 3.1: reset on active / crossing P or E). */
   defaultView: 'today' | 'tomorrow';
 };
@@ -24,8 +26,11 @@ export type RolloverPlan = {
 export function planRollover(now: Date, settings: RolloverSettings): RolloverPlan {
   const todayDay = todayKey(now, settings.dayEndTime);
   const tomorrowDay = tomorrowKey(now, settings.dayEndTime);
-  const defaultView: 'today' | 'tomorrow' = isPlanningMode(now, settings.planningTime, settings.dayEndTime)
-    ? 'tomorrow'
-    : 'today';
-  return { todayDay, tomorrowDay, defaultView };
+  const planning = isPlanningMode(now, settings.planningTime, settings.dayEndTime);
+  return {
+    todayDay,
+    tomorrowDay,
+    mode: planning ? 'planning' : 'day',
+    defaultView: planning ? 'tomorrow' : 'today',
+  };
 }

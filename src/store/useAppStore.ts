@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
-import { isPlanningMode } from '@/logic/dates';
+import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { planRollover } from '@/logic/rollover';
 
 export type View = 'today' | 'tomorrow';
@@ -26,10 +26,14 @@ type AppState = {
   /** Logical-date keys ('YYYY-MM-DD') for the two lists currently shown. */
   todayDay: string;
   tomorrowDay: string;
+  /** Whether we're currently in day mode or planning mode (spec 3.1); independent of selectedView, which the user can override manually. */
+  mode: 'day' | 'planning';
   todayTasks: tasksRepo.Task[];
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
   pendingUndo: PendingUndo | null;
+  /** Whether the "Move unfinished to tomorrow?" bottom sheet is showing (spec 3.4). */
+  carrySheetVisible: boolean;
 
   /** Opens the DB, loads settings + today/tomorrow's tasks, and picks the default view. */
   init: () => void;
@@ -53,11 +57,19 @@ type AppState = {
    */
   runRollover: () => void;
   /**
-   * Lighter than runRollover: just recomputes which view (Today/Tomorrow)
-   * is the mode default, without touching day keys or purging. Runs on the
-   * in-foreground timer to the next planning time P.
+   * Lighter than runRollover: just recomputes the mode/default view,
+   * without purging. Runs on the in-foreground timer to the next planning
+   * time P.
    */
   refreshMode: () => void;
+  /** Sets carrySheetVisible if the spec 3.4 conditions are currently met. Called after runRollover/refreshMode. */
+  evaluateCarryPrompt: () => void;
+  /** Fallback link (spec 3.4): reopens the sheet even if already shown today. */
+  openCarrySheet: () => void;
+  /** "Skip": marks the prompt as shown for today and closes the sheet. */
+  skipCarrySheet: () => void;
+  /** "Move": moves the checked tasks to tomorrow, marks the prompt shown, and closes the sheet. */
+  moveCarryOverTasks: (taskIds: string[]) => void;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
@@ -70,10 +82,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: settingsRepo.DEFAULT_SETTINGS,
   todayDay: '',
   tomorrowDay: '',
+  mode: 'day',
   todayTasks: [],
   tomorrowTasks: [],
   selectedView: 'today',
   pendingUndo: null,
+  carrySheetVisible: false,
 
   init: () => {
     const settings = settingsRepo.getSettings();
@@ -140,21 +154,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().commitPendingUndo(); // spec 3.5: commit a pending completion before purging
     const { settings } = get();
     const now = new Date();
-    const { todayDay, tomorrowDay, defaultView } = planRollover(now, settings);
+    const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
     tasksRepo.purgeBefore(todayDay);
     set({
       todayDay,
       tomorrowDay,
+      mode,
       selectedView: defaultView,
       todayTasks: tasksRepo.listByDay(todayDay),
       tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
     });
+    get().evaluateCarryPrompt();
   },
 
   refreshMode: () => {
     const { settings } = get();
     const now = new Date();
-    const defaultView: View = isPlanningMode(now, settings.planningTime, settings.dayEndTime) ? 'tomorrow' : 'today';
-    set({ selectedView: defaultView });
+    const { mode, defaultView } = planRollover(now, settings);
+    set({ mode, selectedView: defaultView });
+    get().evaluateCarryPrompt();
+  },
+
+  evaluateCarryPrompt: () => {
+    const { settings, todayDay, todayTasks } = get();
+    const now = new Date();
+    const show = shouldShowCarryPrompt(now, settings, todayDay, settings.lastCarryPromptDate, todayTasks.length);
+    if (show) set({ carrySheetVisible: true });
+  },
+
+  openCarrySheet: () => set({ carrySheetVisible: true }),
+
+  skipCarrySheet: () => {
+    const { todayDay, settings } = get();
+    settingsRepo.setLastCarryPromptDate(todayDay);
+    set({ settings: { ...settings, lastCarryPromptDate: todayDay }, carrySheetVisible: false });
+  },
+
+  moveCarryOverTasks: (taskIds) => {
+    const { todayDay, tomorrowDay, settings } = get();
+    moveTasks(taskIds, todayDay, tomorrowDay);
+    settingsRepo.setLastCarryPromptDate(todayDay);
+    set({ settings: { ...settings, lastCarryPromptDate: todayDay }, carrySheetVisible: false });
+    get().refreshTasks();
   },
 }));

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddFab } from '@/components/AddFab';
+import { CarryOverSheet } from '@/components/CarryOverSheet';
 import { Header } from '@/components/Header';
 import { InputBar } from '@/components/InputBar';
 import { TaskRow } from '@/components/TaskRow';
@@ -27,17 +28,22 @@ import { colors, layout, type } from '@/theme';
 export default function HomeScreen() {
   const isReady = useAppStore((s) => s.isReady);
   const selectedView = useAppStore((s) => s.selectedView);
+  const mode = useAppStore((s) => s.mode);
   const todayDay = useAppStore((s) => s.todayDay);
   const tomorrowDay = useAppStore((s) => s.tomorrowDay);
   const todayTasks = useAppStore((s) => s.todayTasks);
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
   const pendingUndo = useAppStore((s) => s.pendingUndo);
+  const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
   const init = useAppStore((s) => s.init);
   const addTask = useAppStore((s) => s.addTask);
   const editTask = useAppStore((s) => s.editTask);
   const completeTask = useAppStore((s) => s.completeTask);
   const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
+  const openCarrySheet = useAppStore((s) => s.openCarrySheet);
+  const skipCarrySheet = useAppStore((s) => s.skipCarrySheet);
+  const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
 
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
@@ -104,8 +110,12 @@ export default function HomeScreen() {
 
   const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
   const tasks = pendingUndo ? rawTasks.filter((t) => t.id !== pendingUndo.task.id) : rawTasks;
+  const todayUnfinishedTasks = pendingUndo
+    ? todayTasks.filter((t) => t.id !== pendingUndo.task.id)
+    : todayTasks;
   const todayLabel = formatHeaderDate(parseDayKey(todayDay));
   const tomorrowLabel = formatHeaderDate(parseDayKey(tomorrowDay));
+  const showFallbackLink = mode === 'planning' && selectedView === 'today';
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
@@ -133,6 +143,13 @@ export default function HomeScreen() {
             renderItem={({ item }) => (
               <TaskRow task={item} onComplete={completeTask} onEdit={(task) => openInputFor(task)} />
             )}
+            ListFooterComponent={
+              showFallbackLink ? (
+                <Pressable style={styles.fallbackLink} onPress={openCarrySheet}>
+                  <Text style={styles.fallbackLinkText}>Move unfinished to tomorrow</Text>
+                </Pressable>
+              ) : null
+            }
           />
         </Pressable>
 
@@ -143,6 +160,13 @@ export default function HomeScreen() {
 
       {!inputVisible ? <AddFab onPress={() => openInputFor(null)} /> : null}
       {pendingUndo ? <UndoPill onUndo={undoPending} /> : null}
+
+      <CarryOverSheet
+        visible={carrySheetVisible}
+        tasks={todayUnfinishedTasks}
+        onMove={moveCarryOverTasks}
+        onSkip={skipCarrySheet}
+      />
     </SafeAreaView>
   );
 }
@@ -154,4 +178,6 @@ const styles = StyleSheet.create({
   listContent: { paddingTop: layout.listTopGap, paddingBottom: layout.fabSize + 32 },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { fontSize: type.empty, color: colors.muted },
+  fallbackLink: { paddingHorizontal: layout.screenPadding, paddingVertical: 12 },
+  fallbackLinkText: { fontSize: type.header, color: colors.muted },
 });
