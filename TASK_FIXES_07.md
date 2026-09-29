@@ -1,6 +1,21 @@
-# Task 07: verify and complete everything from the fifth device test
+# Task 07: Undo is broken (critical) + verify everything from the fifth device test
 
-Start this **after** TASK_FIXES_06 is committed. While 06 was in progress, the owner added requirements to it, so the 06 run may have missed some of them.
+## 0. CRITICAL: Undo doesn't bring tasks back (owner, after the 06 commit e35229a)
+**Root cause (found by reading the code):**
+1. `TaskRow.handleFullSwipe()` captures `onAnimationComplete` **at swipe time**. That's `handleAnimationComplete` from `app/index.tsx`, rendered **before** `beginComplete` set `pendingBatch`, so its `pendingBatch` is a **stale `null`**.
+2. When the animation ends, `if (!pendingBatch?.tasks.some(...)) return;` exits early, so the id is **never added to `hiddenRowIds`**. The row stays mounted, invisible only because its own state has `opacity = 0` and a collapsed `height = 0`.
+3. On Undo, `handleUndo` removes the ids from `hiddenRowIds`, but they were never there. The row stays mounted with `isCompleting = true`, opacity 0 and height 0. **The task is back in the data but invisible.** The same happens if Undo is tapped before the ~700ms animation finishes.
+
+**Fix (both parts required):**
+- a) **No stale closures:** in `handleAnimationComplete` (and `handleUndo`), read the live store with `useAppStore.getState().pendingBatch`, not the render-time value. Alternatively, let the row call a stable callback (`useCallback` + ref).
+- b) **A restored row must look normal again:** pass `isPending` (the task is in the current batch) to `TaskRow`. When `isPending` changes from true to false while the row is completing or collapsed, reset it: `opacity = 1`, stop the animations, drop the fixed height (`isCollapsing = false`), `isCompleting = false`, and close the swipeable. A simpler alternative: key restored rows with a restore counter (`key={task.id + ':' + restoreCount}`) so they remount fresh. Pick one and comment why.
+- Add a test (or at least a manual check) for **Undo after the animation has finished** and **Undo during the animation**, for 1 task and for 3 tasks.
+
+Do this item **first**, then the checklist below.
+
+---
+
+TASK_FIXES_06 is committed (e35229a). While 06 was in progress, the owner added requirements to it, so the 06 run may have missed some of them.
 Read `TODO_APP_SPEC.md` sections 3.2 and 4, and `TASK_FIXES_06.md` (final version). Then go through this checklist against the **code**, and implement whatever is missing or different:
 
 | # | Requirement | Where |

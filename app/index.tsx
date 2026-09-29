@@ -67,6 +67,12 @@ export default function HomeScreen() {
   // from `pendingBatch` so the list doesn't yank a row out from under its
   // own in-progress animation the instant the swipe threshold is crossed.
   const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
+  // How many times each task has been restored by Undo (TASK_FIXES_07,
+  // item 0b). Folded into the FlatList's key so a restored row always
+  // gets a fresh TaskRow mount -- see the comment on handleUndo for why
+  // that's needed instead of trying to reset the row's animated state
+  // in place.
+  const [restoreCounts, setRestoreCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     init();
@@ -164,23 +170,71 @@ export default function HomeScreen() {
     setInputVisible(true);
   }
 
-  /** This row's own completion animation (strike-through, fade, collapse) has finished -- now actually remove it from the list. */
+  /**
+   * This row's own completion animation (strike-through, fade, collapse)
+   * has finished -- now actually remove it from the list.
+   *
+   * TASK_FIXES_07 item 0a: TaskRow calls this from a closure chain rooted
+   * in the swipe event (setTimeout -> Animated .start() -> .start()), so
+   * the specific function instance it's holding was captured back at
+   * swipe time -- BEFORE beginComplete() had updated pendingBatch. Later
+   * re-renders of this screen create fresh `handleAnimationComplete`
+   * instances, but TaskRow's already-in-flight callback chain keeps
+   * calling the frozen one from that first render, whose closure over
+   * `pendingBatch` (React state) is permanently stale. Reading
+   * useAppStore.getState() here instead bypasses that entirely: it's an
+   * imperative, always-current read of the live store, not a react to
+   * this component's own props/state, so it's correct regardless of
+   * which stale instance of this function ends up calling it.
+   */
   function handleAnimationComplete(task: { id: string }) {
+    const liveBatch = useAppStore.getState().pendingBatch;
     // If Undo was already pressed (or the batch already committed/lost
     // this task some other way) before this row's own animation finished,
     // don't hide it -- either it's already been restored, or it's already
     // gone from the underlying data (a harmless no-op either way).
-    if (!pendingBatch?.tasks.some((t) => t.id === task.id)) return;
+    if (!liveBatch?.tasks.some((t) => t.id === task.id)) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setHiddenRowIds((prev) => new Set(prev).add(task.id));
   }
 
-  /** Restores every task in the pending batch (spec 3.2 v4). */
+  /**
+   * Restores every task in the pending batch (spec 3.2 v4). Reads
+   * useAppStore.getState() rather than the `pendingBatch` closed over by
+   * this render, for the same reason as handleAnimationComplete above --
+   * cheap insurance even though, unlike that callback, this one is
+   * invoked directly by a fresh UndoButton press rather than from a
+   * long-lived closure chain.
+   *
+   * TASK_FIXES_07 item 0b: bumps each restored task's entry in
+   * `restoreCounts`, which is folded into the FlatList's key. That forces
+   * a fresh TaskRow mount for it, which is what actually makes a restored
+   * row look normal again -- clearing `hiddenRowIds` alone isn't enough
+   * if Undo is tapped WHILE the row's own strike-through/fade/collapse
+   * animation is still running: that row was never added to
+   * `hiddenRowIds` (its animation hasn't reached handleAnimationComplete
+   * yet) or in `tasks` filter terms; it's just sitting there mid-animation
+   * with isCompleting/isCollapsing already true and opacity/height
+   * already animating toward 0. Manually resetting every piece of that
+   * animated state (stopping two Animated.timings, restoring opacity to
+   * 1, dropping the collapsed height, un-striking the text, and closing
+   * the swipeable) would be fiddly and easy to get subtly wrong; forcing
+   * an unmount+remount via the key resets all of it at once, guaranteed,
+   * the same way a genuinely fresh task row already does.
+   */
   function handleUndo() {
-    const batchTaskIds = pendingBatch?.tasks.map((t) => t.id) ?? [];
+    const liveBatch = useAppStore.getState().pendingBatch;
+    const batchTaskIds = liveBatch?.tasks.map((t) => t.id) ?? [];
     undoPending();
     if (batchTaskIds.length > 0) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setRestoreCounts((prev) => {
+        const next = { ...prev };
+        for (const id of batchTaskIds) {
+          next[id] = (next[id] ?? 0) + 1;
+        }
+        return next;
+      });
       setHiddenRowIds((prev) => {
         const next = new Set(prev);
         let changed = false;
@@ -273,7 +327,11 @@ export default function HomeScreen() {
         <View style={styles.listArea}>
           <FlatList
             data={tasks}
-            keyExtractor={(item) => item.id}
+            // Includes the restore count (TASK_FIXES_07 item 0b) so a
+            // task Undo brings back gets a brand-new TaskRow instance,
+            // not a reused one still holding stale completion-animation
+            // state.
+            keyExtractor={(item) => `${item.id}:${restoreCounts[item.id] ?? 0}`}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={[styles.listContent, tasks.length === 0 && styles.emptyContainer]}
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
