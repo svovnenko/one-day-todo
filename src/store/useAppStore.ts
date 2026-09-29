@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
+import { type BackupFile, buildExport, exportBackupFile } from '@/logic/backup';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
@@ -77,6 +78,15 @@ type AppState = {
    * cancels) the daily reminder notification (spec 3.6).
    */
   updateSchedule: (partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>) => void;
+  /** Spec 3.8: builds the export JSON (excluding any pending-undo task) and opens the share sheet. */
+  exportBackup: () => Promise<void>;
+  /**
+   * Spec 3.8: replaces all tasks + schedule settings from a validated
+   * backup, then runs the rollover (which drops tasks from days before
+   * today per the normal rule). Returns how many tasks were dropped that
+   * way, so the caller can show "N old tasks were skipped."
+   */
+  importBackup: (backup: BackupFile) => number;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
@@ -215,5 +225,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings });
     get().runRollover(); // spec 3.6: recompute the mode immediately
     applyReminderSchedule(settings).catch(() => {});
+  },
+
+  exportBackup: async () => {
+    const { settings, todayDay, todayTasks, tomorrowTasks, pendingUndo } = get();
+    const excludeId = pendingUndo?.task.id;
+    const tasks = [...todayTasks, ...tomorrowTasks]
+      .filter((t) => t.id !== excludeId)
+      .map((t) => ({ text: t.text, day: t.day, position: t.position, carryCount: t.carryCount }));
+    const payload = buildExport(
+      new Date(),
+      {
+        planningTime: settings.planningTime,
+        dayEndTime: settings.dayEndTime,
+        reminderEnabled: settings.reminderEnabled,
+      },
+      tasks
+    );
+    await exportBackupFile(payload, todayDay);
+  },
+
+  importBackup: (backup) => {
+    tasksRepo.replaceAll(backup.tasks);
+    settingsRepo.replaceScheduleSettings(backup.settings);
+    const settings = { ...get().settings, ...backup.settings };
+    set({ settings });
+
+    const { todayDay } = planRollover(new Date(), settings);
+    const skippedCount = backup.tasks.filter((t) => t.day < todayDay).length;
+
+    get().runRollover();
+    applyReminderSchedule(settings).catch(() => {});
+    return skippedCount;
   },
 }));
