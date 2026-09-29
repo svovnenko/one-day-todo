@@ -8,7 +8,19 @@ import { colors, layout, type } from '@/theme';
 
 type Props = {
   task: Task;
-  onComplete: (task: Task) => void;
+  /**
+   * Fires the instant the swipe crosses the threshold (spec 3.2/4,
+   * TASK_FIXES_04): the caller should start the Undo window right away
+   * (the Undo button must appear immediately, not ~500ms later once this
+   * row's own animation finishes).
+   */
+  onSwipeThreshold: (task: Task) => void;
+  /**
+   * Fires after this row's own strike-through+fade has fully played out.
+   * The caller should only now actually remove the row from whatever list
+   * it renders -- removing it earlier would cut the animation short.
+   */
+  onAnimationComplete: (task: Task) => void;
   onEdit: (task: Task) => void;
 };
 
@@ -21,7 +33,7 @@ const FADE_DURATION_MS = 150;
  * with a checkmark); tap to edit. A tap never completes, preventing
  * accidental deletions.
  */
-export function TaskRow({ task, onComplete, onEdit }: Props) {
+export function TaskRow({ task, onSwipeThreshold, onAnimationComplete, onEdit }: Props) {
   const [isCompleting, setIsCompleting] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const swipeableRef = useRef<SwipeableMethods>(null);
@@ -34,12 +46,15 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
     // fade below hides it, and it fades everything (row + revealed zone)
     // together, so nothing is left showing once the text has faded.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    // Start the Undo window/button right now, before the animation below
+    // even begins -- this is purely cosmetic and mustn't delay it.
+    onSwipeThreshold(task);
     setTimeout(() => {
       Animated.timing(opacity, {
         toValue: 0,
         duration: FADE_DURATION_MS,
         useNativeDriver: true,
-      }).start(() => onComplete(task));
+      }).start(() => onAnimationComplete(task));
     }, STRIKE_DELAY_MS);
   }
 

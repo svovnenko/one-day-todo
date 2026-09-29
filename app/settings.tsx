@@ -2,7 +2,7 @@ import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/d
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { formatHHMM, parseHHMM, planningRightAfterDayEndHint } from '@/logic/dates';
+import { ALLOWED_DAY_END_TIMES, formatHHMM, isValidPlanningTime, parseHHMM } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout } from '@/theme';
 
@@ -21,27 +21,29 @@ export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateSchedule = useAppStore((s) => s.updateSchedule);
 
-  function commitTime(field: 'planningTime' | 'dayEndTime', hhmm: string) {
-    const other = field === 'planningTime' ? settings.dayEndTime : settings.planningTime;
-    if (hhmm === other) {
-      Alert.alert('Planning time and day-end time must be different.');
+  /**
+   * Day-end (E) and planning time (P) ranges no longer overlap (E is
+   * 00:00-04:00, P is 12:00-23:59), so they can never collide -- only P
+   * needs its own range check here (spec 3.1 v4).
+   */
+  function commitPlanningTime(hhmm: string) {
+    if (!isValidPlanningTime(hhmm)) {
+      Alert.alert('Planning time must be between 12:00 and 23:59.');
       return;
     }
-    updateSchedule({ [field]: hhmm });
+    updateSchedule({ planningTime: hhmm });
   }
 
-  function openAndroidPicker(field: 'planningTime' | 'dayEndTime') {
+  function openAndroidPlanningPicker() {
     DateTimePickerAndroid.open({
-      value: timeToDate(field === 'planningTime' ? settings.planningTime : settings.dayEndTime),
+      value: timeToDate(settings.planningTime),
       mode: 'time',
       is24Hour: true,
       onChange: (_event, date) => {
-        if (date) commitTime(field, dateToTime(date));
+        if (date) commitPlanningTime(dateToTime(date));
       },
     });
   }
-
-  const hint = planningRightAfterDayEndHint(settings.planningTime, settings.dayEndTime);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
@@ -51,7 +53,7 @@ export default function SettingsScreen() {
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Planning time</Text>
             {Platform.OS === 'android' ? (
-              <Pressable onPress={() => openAndroidPicker('planningTime')}>
+              <Pressable onPress={openAndroidPlanningPicker}>
                 <Text style={styles.rowValue}>{settings.planningTime}</Text>
               </Pressable>
             ) : (
@@ -60,31 +62,31 @@ export default function SettingsScreen() {
                 display="compact"
                 value={timeToDate(settings.planningTime)}
                 onChange={(_event, date) => {
-                  if (date) commitTime('planningTime', dateToTime(date));
+                  if (date) commitPlanningTime(dateToTime(date));
                 }}
               />
             )}
           </View>
-          {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
           <View style={styles.divider} />
 
-          <View style={styles.row}>
+          <View style={styles.dayEndBlock}>
             <Text style={styles.rowLabel}>Day ends at</Text>
-            {Platform.OS === 'android' ? (
-              <Pressable onPress={() => openAndroidPicker('dayEndTime')}>
-                <Text style={styles.rowValue}>{settings.dayEndTime}</Text>
-              </Pressable>
-            ) : (
-              <DateTimePicker
-                mode="time"
-                display="compact"
-                value={timeToDate(settings.dayEndTime)}
-                onChange={(_event, date) => {
-                  if (date) commitTime('dayEndTime', dateToTime(date));
-                }}
-              />
-            )}
+            <View style={styles.dayEndSegment}>
+              {ALLOWED_DAY_END_TIMES.map((option) => {
+                const selected = settings.dayEndTime === option;
+                return (
+                  <Pressable
+                    key={option}
+                    style={[styles.dayEndOption, selected && styles.dayEndOptionSelected]}
+                    onPress={() => updateSchedule({ dayEndTime: option })}>
+                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>
+                      {option}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
           <Text style={styles.caption}>Tasks left after this time are deleted.</Text>
 
@@ -126,5 +128,32 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 17, color: colors.muted },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: layout.screenPadding },
   caption: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
-  hint: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
+  dayEndBlock: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 12,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  dayEndSegment: {
+    flexDirection: 'row',
+    backgroundColor: colors.swipeBackground,
+    borderRadius: 8,
+    padding: 2,
+  },
+  dayEndOption: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  dayEndOptionSelected: {
+    backgroundColor: colors.background,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  dayEndOptionText: { fontSize: 13, color: colors.muted },
+  dayEndOptionTextSelected: { color: colors.text, fontWeight: '600' },
 });

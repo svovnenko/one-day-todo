@@ -2,8 +2,9 @@ import {
   addDays,
   dateKey,
   isPlanningMode,
+  isValidDayEnd,
+  isValidPlanningTime,
   offset,
-  planningRightAfterDayEndHint,
   todayKey,
   tomorrowKey,
 } from '@/logic/dates';
@@ -123,19 +124,43 @@ describe('DST safety (adding a calendar day never drifts by an hour)', () => {
   });
 });
 
-describe('planningRightAfterDayEndHint', () => {
-  const E = '04:00';
-
-  it('shows the hint when P is soon after E', () => {
-    expect(planningRightAfterDayEndHint('04:15', E)).toBe('Planning time is right after day end');
-    expect(planningRightAfterDayEndHint('05:00', E)).toBe('Planning time is right after day end');
+describe('isValidDayEnd (spec 3.1 v4: whole hours 00:00-04:00 only)', () => {
+  it('accepts each of the 5 allowed values', () => {
+    expect(isValidDayEnd('00:00')).toBe(true);
+    expect(isValidDayEnd('01:00')).toBe(true);
+    expect(isValidDayEnd('02:00')).toBe(true);
+    expect(isValidDayEnd('03:00')).toBe(true);
+    expect(isValidDayEnd('04:00')).toBe(true);
   });
 
-  it('is null well away from E', () => {
-    expect(planningRightAfterDayEndHint('20:00', E)).toBeNull();
+  it('rejects a non-whole-hour value (e.g. a leftover test value like 17:18)', () => {
+    expect(isValidDayEnd('17:18')).toBe(false);
+    expect(isValidDayEnd('04:30')).toBe(false);
   });
 
-  it('is null when P equals E (that case is blocked elsewhere, not hinted)', () => {
-    expect(planningRightAfterDayEndHint('04:00', E)).toBeNull();
+  it('rejects an hour outside 00:00-04:00', () => {
+    expect(isValidDayEnd('05:00')).toBe(false);
+    expect(isValidDayEnd('23:00')).toBe(false);
+  });
+});
+
+describe('isValidPlanningTime (spec 3.1 v4: 12:00-23:59 only)', () => {
+  it('accepts the boundaries', () => {
+    expect(isValidPlanningTime('12:00')).toBe(true);
+    expect(isValidPlanningTime('23:59')).toBe(true);
+  });
+
+  it('accepts a typical value', () => {
+    expect(isValidPlanningTime('20:00')).toBe(true);
+  });
+
+  it('rejects a morning time', () => {
+    expect(isValidPlanningTime('10:00')).toBe(false);
+    expect(isValidPlanningTime('11:59')).toBe(false);
+  });
+
+  it('rejects the day-end range (00:00-04:00 can no longer collide with P)', () => {
+    expect(isValidPlanningTime('00:00')).toBe(false);
+    expect(isValidPlanningTime('04:00')).toBe(false);
   });
 });

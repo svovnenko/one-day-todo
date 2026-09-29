@@ -1,6 +1,6 @@
 # One-Day To-Do — Product & Technical Spec
 
-> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v3: after the business-analyst review and the first device test).
+> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v4: after the business-analyst review and three rounds of device testing).
 > Build exactly this; anything not listed is out of scope. When in doubt, choose the simpler option.
 
 ---
@@ -10,7 +10,7 @@
 A minimal "paper notepad" to-do app for iPhone. It holds **one day at a time**:
 
 - You write a plain list of tasks for **today** (and, from the evening onward, for **tomorrow**).
-- **Swipe right** on a task to complete it. It is struck through and removed, and a short **Undo** pill appears. After that it is permanently deleted, with no history ("done and forget").
+- **Swipe right** on a task to complete it. It is struck through and removed, and a round **Undo** button with a countdown ring appears for 3 seconds. After that it is permanently deleted, with no history ("done and forget").
 - At a configurable **planning time** (default **20:00**) the app switches to **Tomorrow** so you can plan the next day, and offers to **move unfinished tasks** there. Tasks that keep getting moved show a small **carry-over counter** (×2, ×3…).
 - At a configurable **day-end time** (default **04:00**, not midnight, so a late night still counts as today), whatever is left of today is **permanently deleted**. Tomorrow becomes Today.
 - No details, no priorities, no due times, no recurring tasks, no timers, no history, no stats, no accounts.
@@ -64,7 +64,7 @@ The target user is the owner only (single user, a personal app).
 - **Minutes into the logical day:** `offset(t) = (minutesOfDay(t) - minutesOf(E) + 1440) % 1440`.
 - **Day mode** when `offset(now) < offset(P)`: the default view is **Today**.
 - **Planning mode** when `offset(now) >= offset(P)`, i.e. from P until E, across midnight: the default view is **Tomorrow**. Today is still reachable through the header toggle.
-- **Validation in Settings:** P must be different from E. Any P is otherwise allowed, because the offset math handles wrap-around. Picking P right after E shows the hint "Planning time is right after day end". It is not blocked.
+- **Allowed ranges (v4, after the device test):** `E` is **00:00–04:00** only, in whole hours: 00:00, 01:00, 02:00, 03:00 or 04:00. So the day never switches before midnight. `P` is **12:00–23:59** only, so planning always happens in the afternoon or evening of the same calendar day. Stored values outside these ranges (for example from testing) are reset to the defaults on load.
 - **Tomorrow is locked in day mode** (changed after the first device test). Before P, only **Today** exists for the user: the header shows only the `Today · …` label, and nothing (tap, store action, add) can select or write to Tomorrow.
 - In **planning mode** both labels are shown, and the user can switch between Today and Tomorrow freely. When the app becomes active or crosses P or E, the view resets to the mode default.
 
@@ -73,8 +73,8 @@ The target user is the owner only (single user, a personal app).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Swipe right** on a task → it completes:
   - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then collapses with a 150ms fade.
-  - An **Undo pill** appears at the bottom center: `Done · Undo`. It is dark `#1C1C1E` with white 15pt text, a rounded pill, and sits above the FAB and the safe area.
-  - It stays for **3 seconds**. A thin white line (2pt, 50% opacity) along the bottom inside the pill shrinks from full width to zero over those 3 seconds. Tapping **Undo** restores the task to its original position.
+  - A round **Undo button** appears **immediately** when the swipe passes the threshold, while the row is still animating out. It is 56pt, dark `#1C1C1E`, shows only the white text **`Undo`** (15pt, semibold) with no icon, and sits at the bottom-right, mirroring the + FAB.
+  - A white **countdown ring** (3pt stroke) around the button empties clockwise from 12 o'clock over **3 seconds**, like a timer. Tapping the button restores the task to its original position.
   - After 3 seconds, or when another task is completed (only one pending undo at a time; the previous one is committed), the task is **deleted permanently**.
 - **Tap** a task → edit its text (reuses the input bar, prefilled). Saving empty text deletes the task (also with the Undo pill).
 - A tap never completes a task, which prevents accidental deletions.
@@ -114,8 +114,8 @@ The target user is the owner only (single user, a personal app).
 ### 3.6 Settings (modal)
 A **small grey gear icon** in the top-right corner opens a simple grouped list:
 - **Schedule**
-  - `Planning time`: a time picker (default **20:00**)
-  - `Day ends at`: a time picker (default **04:00**), with the caption: "Tasks left after this time are deleted."
+  - `Planning time`: a time picker limited to **12:00–23:59** (default **20:00**)
+  - `Day ends at`: a choice of **00:00 / 01:00 / 02:00 / 03:00 / 04:00** (default **04:00**), with the caption: "Tasks left after this time are deleted."
   - `Daily reminder`: an on/off switch (default **on**)
 
 Changing any time setting reschedules the notification immediately and recomputes the mode.
@@ -144,7 +144,7 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | List top | ~24pt gap below the header |
 | Header | One line, 15pt, grey `#8E8E93`: `Today · Tue 29 Sep` and `Tomorrow · Wed 30 Sep` as two tappable labels (logical dates). The Tomorrow label is shown **only in planning mode**. The selected label is black and medium weight. The gear icon (18pt, grey) sits on the right. Follow safe areas. |
 | FAB | 56pt white circle, bottom-left (16pt from edges, above the safe area), shadow (opacity 0.15, radius 8, offset y 2), black "+" 24pt |
-| Undo pill | Bottom center, 44pt tall, `#1C1C1E` background, white 15pt text `Done · Undo`, slides up and fades out |
+| Undo button | Round, 56pt, bottom-right (16pt from the edges, above the safe area), `#1C1C1E`, white text `Undo` 15pt semibold, centred, no icon. A white 3pt countdown ring empties over 3s (`react-native-svg` + Reanimated). It appears immediately on swipe and fades out when the time is up. |
 | Input bar | Docked above the keyboard, white, 1px top border `#E5E5EA`, 17pt text, 16pt padding |
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
 | Carry-over sheet | White bottom sheet with a rounded top (16pt), a simple checkbox list, and full-width black `Move` and grey text `Skip` buttons |
@@ -220,7 +220,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Add 3 tasks with Return between them | All 3 appear in order; the keyboard stays open |
-| 2 | Swipe right on a task | It is struck through and removed; the Undo pill shows for 3s with a shrinking line; the task is still gone after an app restart |
+| 2 | Swipe right on a task | It is struck through and removed; the round Undo button appears immediately with a 3s countdown ring; the task is still gone after an app restart |
 | 3 | Swipe right, then tap Undo | The task returns to its original position |
 | 4 | Complete task A, then task B within 3s | A is committed (deleted); the pill now refers to B |
 | 5 | Tap a task, change the text, save | The text is updated; nothing is completed |
@@ -232,7 +232,7 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | 11 | Open the app at 01:30 (E=04:00) | Still the same logical day: the header shows yesterday's calendar date as "Today"; the lists are unchanged; planning mode |
 | 12 | Open the app at 04:10 | The old today's tasks are gone; the former Tomorrow is now Today; day mode |
 | 13 | Keep the app open across 04:00 | The list rolls over without a restart |
-| 14 | Change P to 21:30 and E to 05:00 | The notification is rescheduled; the mode and rollover use the new times |
+| 14 | Change P to 21:30 and E to 03:00 | The notification is rescheduled; the mode and rollover use the new times |
 | 17 | Deny notification permission | The app works; no crash |
 | 18 | iOS dark mode is on | The app is still white |
 | 19 | Unit tests for `dates.ts` | Cover E/P boundaries (03:59/04:00, 19:59/20:00), P after midnight, month/year rollover, DST change days |

@@ -120,17 +120,15 @@ export function parseDayKey(key: DayKey): Date {
   return new Date(y, m - 1, d);
 }
 
-/** How many minutes P sits after E, wrapping through the logical day (0 if they're equal). */
-export function minutesAfterDayEnd(planningTime: string, dayEndTime: string): number {
-  return offsetMinutes(parseHHMM(planningTime), dayEndTime);
+/** The only allowed day-end times (spec 3.1 v4): whole hours from midnight to 04:00, so the day never switches before midnight. */
+export const ALLOWED_DAY_END_TIMES = ['00:00', '01:00', '02:00', '03:00', '04:00'] as const;
+
+export function isValidDayEnd(dayEndTime: string): boolean {
+  return (ALLOWED_DAY_END_TIMES as readonly string[]).includes(dayEndTime);
 }
 
-/**
- * Spec 3.1: P must differ from E, but any other P is allowed -- picking a P
- * that lands soon after E just shows a hint, it isn't blocked. "Soon" is
- * within an hour of E.
- */
-export function planningRightAfterDayEndHint(planningTime: string, dayEndTime: string): string | null {
-  const gap = minutesAfterDayEnd(planningTime, dayEndTime);
-  return gap > 0 && gap <= 60 ? 'Planning time is right after day end' : null;
+/** Planning time must fall in the afternoon/evening of the same calendar day (spec 3.1 v4): 12:00-23:59. */
+export function isValidPlanningTime(planningTime: string): boolean {
+  const minutes = parseHHMM(planningTime);
+  return minutes >= 12 * 60 && minutes <= 23 * 60 + 59;
 }

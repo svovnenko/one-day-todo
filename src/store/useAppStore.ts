@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
 import { moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
+import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
 import { resolveView } from '@/logic/viewLock';
@@ -58,8 +59,15 @@ type AppState = {
   addTask: (view: View, text: string) => void;
   /** Saving empty text completes (deletes-with-undo) the task instead (spec 3.2). */
   editTask: (id: string, text: string) => void;
-  /** Swipe-right completion: opens (or replaces) the Undo window (UNDO_WINDOW_MS). */
-  completeTask: (task: tasksRepo.Task) => void;
+  /**
+   * Starts a task's completion: commits any already-pending task first,
+   * then opens (or replaces) the Undo window (UNDO_WINDOW_MS) for this
+   * one. Called at the swipe threshold, not after the row's own
+   * strike-through/fade animation finishes (TASK_FIXES_04), so the Undo
+   * button appears immediately and the 3s countdown starts from the
+   * swipe, not from ~500ms later.
+   */
+  beginComplete: (task: tasksRepo.Task) => void;
   /** Cancels the pending deletion; the task simply stays where it was. */
   undoPending: () => void;
   /** Permanently deletes whatever is pending (called on timeout or explicitly). */
@@ -118,11 +126,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   carryPromptDue: false,
 
   init: () => {
-    const settings = settingsRepo.getSettings();
+    let settings = settingsRepo.getSettings();
+
+    // Spec 3.1/3.6 v4: E and P now have restricted ranges (E is a whole
+    // hour 00:00-04:00, P is 12:00-23:59). A stored value outside those
+    // ranges (e.g. a leftover test value) is reset to the default and
+    // saved back, so the header dates stay meaningful.
+    if (!isValidDayEnd(settings.dayEndTime)) {
+      settingsRepo.setDayEndTime(settingsRepo.DEFAULT_SETTINGS.dayEndTime);
+      settings = { ...settings, dayEndTime: settingsRepo.DEFAULT_SETTINGS.dayEndTime };
+    }
+    if (!isValidPlanningTime(settings.planningTime)) {
+      settingsRepo.setPlanningTime(settingsRepo.DEFAULT_SETTINGS.planningTime);
+      settings = { ...settings, planningTime: settingsRepo.DEFAULT_SETTINGS.planningTime };
+    }
+
     set({ settings });
     get().runRollover();
     set({ isReady: true });
-    applyReminderSchedule(settings).catch(() => {});
+    applyReminderSchedule(settings).catch(() => {}); // reschedules under the (possibly corrected) settings
   },
 
   refreshTasks: () => {
@@ -147,14 +169,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!trimmed) {
       const task =
         get().todayTasks.find((t) => t.id === id) ?? get().tomorrowTasks.find((t) => t.id === id);
-      if (task) get().completeTask(task);
+      if (task) get().beginComplete(task);
       return;
     }
     tasksRepo.updateText(id, trimmed);
     get().refreshTasks();
   },
 
-  completeTask: (task) => {
+  beginComplete: (task) => {
     // Only one pending undo at a time -- completing another task commits
     // (permanently deletes) whatever was already pending.
     get().commitPendingUndo();

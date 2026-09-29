@@ -15,7 +15,6 @@ export const layout = {
   screenPadding: 16,
   listTopGap: 24,
   fabSize: 56,
-  undoPillHeight: 44,
 };
 
 export const type = {
