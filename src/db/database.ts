@@ -42,11 +42,3 @@ export function getDb(): SQLite.SQLiteDatabase {
   }
   return db;
 }
-
-/** Test-only: closes and forgets the cached connection so a fresh one opens. */
-export function resetDbForTests(): void {
-  if (db) {
-    db.closeSync();
-    db = null;
-  }
-}
