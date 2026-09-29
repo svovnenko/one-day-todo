@@ -1,4 +1,4 @@
-import { batchCompletesToday } from '@/logic/completion';
+import { batchCompletesToday, excludeCompleting, visibleTasks } from '@/logic/completion';
 
 // Only the pure decision function is unit tested here. The "undo doesn't
 // set the date" requirement is a property of the store's wiring, not of
@@ -25,5 +25,37 @@ describe('batchCompletesToday', () => {
 
   it('is false for an empty batch', () => {
     expect(batchCompletesToday([], todayDay)).toBe(false);
+  });
+});
+
+describe('visibleTasks', () => {
+  const tasks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('keeps a task with no completion entry', () => {
+    expect(visibleTasks(tasks, {})).toEqual(tasks);
+  });
+
+  it('keeps a "pending" (still-animating) task visible', () => {
+    expect(visibleTasks(tasks, { b: 'pending' })).toEqual(tasks);
+  });
+
+  it('drops a "hidden" task', () => {
+    expect(visibleTasks(tasks, { b: 'hidden' })).toEqual([{ id: 'a' }, { id: 'c' }]);
+  });
+});
+
+describe('excludeCompleting', () => {
+  const tasks = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('keeps a task with no completion entry', () => {
+    expect(excludeCompleting(tasks, {})).toEqual(tasks);
+  });
+
+  it('drops a "pending" task', () => {
+    expect(excludeCompleting(tasks, { b: 'pending' })).toEqual([{ id: 'a' }, { id: 'c' }]);
+  });
+
+  it('drops a "hidden" task', () => {
+    expect(excludeCompleting(tasks, { b: 'hidden' })).toEqual([{ id: 'a' }, { id: 'c' }]);
   });
 });

@@ -36,6 +36,7 @@ import { UndoButton, type UndoBatchInfo } from '@/components/UndoButton';
 import type { Task } from '@/db/tasksRepo';
 import { useDayClock } from '@/hooks/useDayClock';
 import { movableTaskCount } from '@/logic/carryOver';
+import { excludeCompleting, visibleTasks } from '@/logic/completion';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { footerLines } from '@/logic/footer';
 import { isListFull } from '@/logic/limits';
@@ -53,11 +54,14 @@ export default function HomeScreen() {
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
   const lastCompletedDate = useAppStore((s) => s.settings.lastCompletedDate);
   const pendingBatch = useAppStore((s) => s.pendingBatch);
+  const completion = useAppStore((s) => s.completion);
+  const restoreVersion = useAppStore((s) => s.restoreVersion);
   const carrySheetVisible = useAppStore((s) => s.carrySheetVisible);
   const carryPromptDue = useAppStore((s) => s.carryPromptDue);
   const init = useAppStore((s) => s.init);
   const addTask = useAppStore((s) => s.addTask);
   const beginComplete = useAppStore((s) => s.beginComplete);
+  const markHidden = useAppStore((s) => s.markHidden);
   const undoPending = useAppStore((s) => s.undoPending);
   const setSelectedView = useAppStore((s) => s.setSelectedView);
   const openCarrySheet = useAppStore((s) => s.openCarrySheet);
@@ -68,18 +72,7 @@ export default function HomeScreen() {
 
   const router = useRouter();
   const [inputVisible, setInputVisible] = useState(false);
-  // Rows whose own completion animation has finished and should now
-  // actually be removed from the list (TASK_FIXES_04) -- kept separate
-  // from `pendingBatch` so the list doesn't yank a row out from under its
-  // own in-progress animation the instant the swipe threshold is crossed.
-  const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
-  // How many times each task has been restored by Undo (TASK_FIXES_07,
-  // item 0b). Folded into the FlatList's key so a restored row always
-  // gets a fresh TaskRow mount -- see the comment on handleUndo for why
-  // that's needed instead of trying to reset the row's animated state
-  // in place.
-  const [restoreCounts, setRestoreCounts] = useState<Record<string, number>>({});
-  // Spec 3.3 v5 (auto-scroll): set right after a successful add, consumed
+  // Spec 3.3 (auto-scroll): set right after a successful add, consumed
   // by the FlatList's onContentSizeChange below. listAreaHeightRef tracks
   // the list container's OWN layout height (via its onLayout), which
   // already shrinks when KeyboardAvoidingView makes room for the keyboard
@@ -132,18 +125,6 @@ export default function HomeScreen() {
     const subscription = AppState.addEventListener('change', tryReveal);
     return () => subscription.remove();
   }, [carryPromptDue, isFocused, showCarrySheetIfDue]);
-
-  // Garbage-collects hiddenRowIds: once a task is actually gone from the
-  // store's data (deleted for real, e.g. after the Undo window commits),
-  // there's no point remembering it was "visually hidden".
-  useEffect(() => {
-    setHiddenRowIds((prev) => {
-      if (prev.size === 0) return prev;
-      const stillExists = new Set([...todayTasks, ...tomorrowTasks].map((t) => t.id));
-      const next = new Set([...prev].filter((id) => stillExists.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [todayTasks, tomorrowTasks]);
 
   /**
    * Tries to add `text` to whichever list is currently selected (read live
@@ -219,83 +200,53 @@ export default function HomeScreen() {
 
   /**
    * This row's own completion animation (strike-through, fade, collapse)
-   * has finished -- now actually remove it from the list.
+   * has finished -- marks it 'hidden' in the store, which is what
+   * actually removes it from the rendered list (via `visibleTasks`
+   * below). A no-op inside `markHidden` itself if Undo already restored
+   * it, or the batch already committed some other way -- reading
+   * `completion` from the live store here (rather than this render's
+   * closed-over value) means that check is correct even though TaskRow
+   * calls this from a closure chain rooted well before this specific
+   * function instance existed (setTimeout -> Animated .start() ->
+   * .start()), so the LayoutAnimation below only arms when something is
+   * actually about to change.
    *
-   * TASK_FIXES_07 item 0a: TaskRow calls this from a closure chain rooted
-   * in the swipe event (setTimeout -> Animated .start() -> .start()), so
-   * the specific function instance it's holding was captured back at
-   * swipe time -- BEFORE beginComplete() had updated pendingBatch. Later
-   * re-renders of this screen create fresh `handleAnimationComplete`
-   * instances, but TaskRow's already-in-flight callback chain keeps
-   * calling the frozen one from that first render, whose closure over
-   * `pendingBatch` (React state) is permanently stale. Reading
-   * useAppStore.getState() here instead bypasses that entirely: it's an
-   * imperative, always-current read of the live store, not a react to
-   * this component's own props/state, so it's correct regardless of
-   * which stale instance of this function ends up calling it.
-   *
-   * OPT-01: also wrapped in useCallback with an empty dependency array --
-   * nothing it reads (useAppStore.getState, setHiddenRowIds) ever
-   * changes, so this reference is stable across every render, which is
-   * required for React.memo(TaskRow) to actually skip re-rendering rows
-   * whose task data hasn't changed.
+   * Wrapped in useCallback with an empty dependency array -- nothing it
+   * reads (useAppStore.getState, markHidden) ever changes, so this
+   * reference is stable across every render, which is required for
+   * React.memo(TaskRow) to actually skip re-rendering rows whose task
+   * data hasn't changed.
    */
-  const handleAnimationComplete = useCallback((task: { id: string }) => {
-    const liveBatch = useAppStore.getState().pendingBatch;
-    // If Undo was already pressed (or the batch already committed/lost
-    // this task some other way) before this row's own animation finished,
-    // don't hide it -- either it's already been restored, or it's already
-    // gone from the underlying data (a harmless no-op either way).
-    if (!liveBatch?.tasks.some((t) => t.id === task.id)) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setHiddenRowIds((prev) => new Set(prev).add(task.id));
-  }, []);
+  const handleAnimationComplete = useCallback(
+    (task: { id: string }) => {
+      if (useAppStore.getState().completion[task.id] === undefined) return;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      markHidden(task.id);
+    },
+    [markHidden]
+  );
 
   /**
-   * Restores every task in the pending batch (spec 3.2 v4). Reads
-   * useAppStore.getState() rather than a React-closed-over value, for the
-   * same reason as handleAnimationComplete above -- cheap insurance even
-   * though, unlike that callback, this one is invoked directly by a
-   * fresh UndoButton press rather than from a long-lived closure chain.
-   *
-   * TASK_FIXES_07 item 0b: bumps each restored task's entry in
-   * `restoreCounts`, which is folded into the FlatList's key. That forces
-   * a fresh TaskRow mount for it, which is what actually makes a restored
-   * row look normal again -- clearing `hiddenRowIds` alone isn't enough
-   * if Undo is tapped WHILE the row's own strike-through/fade/collapse
-   * animation is still running: that row was never added to
-   * `hiddenRowIds` (its animation hasn't reached handleAnimationComplete
-   * yet) or in `tasks` filter terms; it's just sitting there mid-animation
-   * with isCompleting/isCollapsing already true and opacity/height
-   * already animating toward 0. Manually resetting every piece of that
-   * animated state (stopping two Animated.timings, restoring opacity to
-   * 1, dropping the collapsed height, un-striking the text, and closing
-   * the swipeable) would be fiddly and easy to get subtly wrong; forcing
-   * an unmount+remount via the key resets all of it at once, guaranteed,
-   * the same way a genuinely fresh task row already does.
+   * Restores every task in the pending batch (spec 3.2). The store's
+   * `restoreVersion` (bumped per task by `undoPending`) is folded into
+   * the FlatList's key, forcing a fresh TaskRow mount for each restored
+   * task -- that's what actually makes a restored row look normal again.
+   * Clearing its `completion` entry alone isn't enough if Undo is tapped
+   * WHILE the row's own strike-through/fade/collapse animation is still
+   * running: that row is just sitting there mid-animation with
+   * isCompleting/isCollapsing already true and opacity/height already
+   * animating toward 0. Manually resetting every piece of that animated
+   * state (stopping two Animated.timings, restoring opacity to 1,
+   * dropping the collapsed height, un-striking the text, and closing the
+   * swipeable) would be fiddly and easy to get subtly wrong; forcing an
+   * unmount+remount via the key resets all of it at once, guaranteed, the
+   * same way a genuinely fresh task row already does.
    */
   const handleUndo = useCallback(() => {
-    const liveBatch = useAppStore.getState().pendingBatch;
-    const batchTaskIds = liveBatch?.tasks.map((t) => t.id) ?? [];
-    undoPending();
-    if (batchTaskIds.length > 0) {
+    if (useAppStore.getState().pendingBatch) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setRestoreCounts((prev) => {
-        const next = { ...prev };
-        for (const id of batchTaskIds) {
-          next[id] = (next[id] ?? 0) + 1;
-        }
-        return next;
-      });
-      setHiddenRowIds((prev) => {
-        const next = new Set(prev);
-        let changed = false;
-        for (const id of batchTaskIds) {
-          if (next.delete(id)) changed = true;
-        }
-        return changed ? next : prev;
-      });
     }
+    undoPending();
   }, [undoPending]);
 
   // Skip, the backdrop tap, and Move must always hide the sheet, even if
@@ -320,16 +271,15 @@ export default function HomeScreen() {
     [moveCarryOverTasks, hideCarrySheet]
   );
 
-  // Stable reference unless todayTasks or the pending batch actually
-  // change -- passed to CarryOverSheet, which otherwise has no way to
-  // tell "a new task list" apart from "the same list, re-filtered because
-  // the parent re-rendered for an unrelated reason" (TASK_FIXES_03).
-  // Excludes every task in the batch, not just one (TASK_FIXES_06/07).
-  const todayUnfinishedTasks = useMemo(() => {
-    if (!pendingBatch) return todayTasks;
-    const batchIds = new Set(pendingBatch.tasks.map((t) => t.id));
-    return todayTasks.filter((t) => !batchIds.has(t.id));
-  }, [todayTasks, pendingBatch]);
+  // Stable reference unless todayTasks or completion actually change --
+  // passed to CarryOverSheet, which otherwise has no way to tell "a new
+  // task list" apart from "the same list, re-filtered because the parent
+  // re-rendered for an unrelated reason". Excludes every task currently
+  // mid-completion (pending or hidden), not just one.
+  const todayUnfinishedTasks = useMemo(
+    () => excludeCompleting(todayTasks, completion),
+    [todayTasks, completion]
+  );
 
   // Stable {version, count} for the Undo button -- derived from
   // pendingBatch (whose reference only changes when the store actually
@@ -340,28 +290,25 @@ export default function HomeScreen() {
     [pendingBatch]
   );
 
-  // OPT-01: memoized so this array's own reference stays stable across
-  // renders that don't actually change which tasks should show (e.g. the
-  // Undo button's ring animation ticking, or anything else re-rendering
-  // this screen for an unrelated reason) -- on its own this wouldn't stop
+  // Memoized so this array's own reference stays stable across renders
+  // that don't actually change which tasks should show (e.g. the Undo
+  // button's ring animation ticking, or anything else re-rendering this
+  // screen for an unrelated reason) -- on its own this wouldn't stop
   // TaskRow from re-rendering (React.memo compares its OWN `task` prop,
   // not this array), but it does mean FlatList doesn't have to redo its
   // internal bookkeeping for a `data` array that's reference-different
   // but content-identical to last time.
   const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
-  const tasks = useMemo(
-    () => rawTasks.filter((t) => !hiddenRowIds.has(t.id)),
-    [rawTasks, hiddenRowIds]
-  );
+  const tasks = useMemo(() => visibleTasks(rawTasks, completion), [rawTasks, completion]);
 
-  // OPT-01: stable list props, so FlatList doesn't treat every keystroke
-  // (or any other unrelated re-render) as "everything about this list
-  // might have changed". keyExtractor still legitimately depends on
-  // restoreCounts (it needs to change when a task is restored); the
-  // others depend on nothing that changes outside of a real list update.
+  // Stable list props, so FlatList doesn't treat every keystroke (or any
+  // other unrelated re-render) as "everything about this list might have
+  // changed". keyExtractor still legitimately depends on restoreVersion
+  // (it needs to change when a task is restored); the others depend on
+  // nothing that changes outside of a real list update.
   const keyExtractor = useCallback(
-    (item: Task) => `${item.id}:${restoreCounts[item.id] ?? 0}`,
-    [restoreCounts]
+    (item: Task) => `${item.id}:${restoreVersion[item.id] ?? 0}`,
+    [restoreVersion]
   );
 
   const renderItem = useCallback(

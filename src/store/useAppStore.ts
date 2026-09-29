@@ -2,9 +2,9 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
-import { BatchUndoScheduler } from '@/logic/batchUndoScheduler';
 import { movableTaskCount, moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { batchCompletesToday } from '@/logic/completion';
+import { CompletionBatch, type CompletionState } from '@/logic/completionBatch';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { freeSlots, isListFull } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
@@ -19,12 +19,12 @@ export type Mode = 'day' | 'planning';
 export const UNDO_WINDOW_MS = 2000;
 
 /**
- * The tasks the user has swiped since the last commit/undo (spec 3.2 v4:
+ * The tasks the user has swiped since the last commit/undo (spec 3.2:
  * batch undo), as exposed to the UI. They stay in SQLite untouched until
  * the batch commits, so killing the app mid-window loses nothing (spec
  * section 5) -- only the UI hides them and shows the Undo button. Every
  * new swipe appends to `tasks` and restarts the countdown (owned by the
- * BatchUndoScheduler below) -- it does NOT commit the earlier ones.
+ * CompletionBatch below) -- it does NOT commit the earlier ones.
  * `version` increments on every append, purely so the UI (the Undo
  * button's ring) can tell "a new task joined" apart from "an unrelated
  * re-render" without keying off any single task's id.
@@ -46,6 +46,20 @@ type AppState = {
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
   pendingBatch: PendingBatch | null;
+  /**
+   * Per-task row state while it's in the pending batch: 'pending' means
+   * still animating out (or never removed from the data yet); 'hidden'
+   * means the row's own animation has finished. A task with no entry here
+   * is unaffected by any batch. Owns everything the screen used to track
+   * itself as `hiddenRowIds`.
+   */
+  completion: Record<string, CompletionState>;
+  /**
+   * Bumped per task by Undo, so a restored row's component remounts
+   * fresh instead of trying to reverse a part-finished animation in
+   * place. Replaces the screen's own `restoreCounts`.
+   */
+  restoreVersion: Record<string, number>;
   /** Whether the "Move unfinished to tomorrow?" bottom sheet is showing (spec 3.4). */
   carrySheetVisible: boolean;
   /**
@@ -73,12 +87,19 @@ type AppState = {
   addTask: (view: View, text: string) => boolean;
   /**
    * Adds a task to the pending batch and restarts its UNDO_WINDOW_MS
-   * timer -- it does NOT commit whatever was already pending (spec 3.2
-   * v4: batch undo). Called at the swipe threshold, not after the row's
-   * own strike-through/fade/collapse animation finishes (TASK_FIXES_04),
-   * so the Undo button appears immediately.
+   * timer -- it does NOT commit whatever was already pending (spec 3.2:
+   * batch undo). Called at the swipe threshold, not after the row's own
+   * strike-through/fade/collapse animation finishes, so the Undo button
+   * appears immediately.
    */
   beginComplete: (task: tasksRepo.Task) => void;
+  /**
+   * The row's own completion animation (strike-through, fade, collapse)
+   * has finished -- marks it 'hidden' so `visibleTasks` drops it from the
+   * list. A no-op if the task isn't in the batch any more (Undo already
+   * restored it, or the batch already committed some other way).
+   */
+  markHidden: (taskId: string) => void;
   /** Restores every task in the batch (they were never deleted) and clears it. */
   undoPending: () => void;
   /** Permanently deletes every task in the batch, in one transaction (timeout, rollover, or backgrounding). */
@@ -124,21 +145,26 @@ function sanitizeTaskText(raw: string): string {
 }
 
 export const useAppStore = create<AppState>((set, get) => {
-  // Owns the batch's timer lifecycle (add/restart/commit/cancel); see
-  // src/logic/batchUndoScheduler.ts. onCommit does the actual SQLite
-  // deletes (in one transaction) and syncs the store once the batch
-  // resolves, whether via timeout, rollover, or backgrounding.
-  const batchScheduler = new BatchUndoScheduler<tasksRepo.Task>(UNDO_WINDOW_MS, (tasks) => {
+  // Owns the batch's timer lifecycle (add/restart/commit/cancel) AND the
+  // per-task completion/restoreVersion state; see
+  // src/logic/completionBatch.ts. onCommit does the actual SQLite deletes
+  // (in one transaction) and syncs the store once the batch resolves,
+  // whether via timeout, rollover, or backgrounding.
+  const completionBatch = new CompletionBatch<tasksRepo.Task>(UNDO_WINDOW_MS, (tasks) => {
     tasksRepo.removeMany(tasks.map((t) => t.id));
-    // Spec 3.4/4 v6: "Done for today." only follows an actual commit (not
+    // Spec 3.4/4: "Done for today." only follows an actual commit (not
     // Undo, which cancels the batch before it gets here) of a batch that
     // included at least one today task (not a tomorrow-only batch).
     const { todayDay, settings } = get();
     if (batchCompletesToday(tasks, todayDay)) {
       settingsRepo.setLastCompletedDate(todayDay);
-      set({ pendingBatch: null, settings: { ...settings, lastCompletedDate: todayDay } });
+      set({
+        pendingBatch: null,
+        completion: completionBatch.completion,
+        settings: { ...settings, lastCompletedDate: todayDay },
+      });
     } else {
-      set({ pendingBatch: null });
+      set({ pendingBatch: null, completion: completionBatch.completion });
     }
     get().refreshTasks();
   });
@@ -153,6 +179,8 @@ export const useAppStore = create<AppState>((set, get) => {
     tomorrowTasks: [],
     selectedView: 'today',
     pendingBatch: null,
+    completion: {},
+    restoreVersion: {},
     carrySheetVisible: false,
     carryPromptDue: false,
 
@@ -205,18 +233,27 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     beginComplete: (task) => {
-      batchScheduler.add(task);
-      set({ pendingBatch: batchScheduler.current });
+      completionBatch.add(task);
+      set({ pendingBatch: completionBatch.current, completion: completionBatch.completion });
+    },
+
+    markHidden: (taskId) => {
+      completionBatch.markHidden(taskId);
+      set({ completion: completionBatch.completion });
     },
 
     undoPending: () => {
       // Nothing to restore in SQLite -- the batch's tasks were never deleted.
-      batchScheduler.cancel();
-      set({ pendingBatch: null });
+      completionBatch.cancel();
+      set({
+        pendingBatch: null,
+        completion: completionBatch.completion,
+        restoreVersion: completionBatch.restoreVersion,
+      });
     },
 
     commitPendingBatch: () => {
-      batchScheduler.commit(); // no-ops if nothing is pending; otherwise its onCommit (above) syncs the store
+      completionBatch.commit(); // no-ops if nothing is pending; otherwise its onCommit (above) syncs the store
     },
 
     setSelectedView: (view) => set({ selectedView: resolveView(view, get().mode) }),
