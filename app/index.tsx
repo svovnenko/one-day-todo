@@ -59,6 +59,11 @@ export default function HomeScreen() {
   // app runs: AppState-active, and timers to the next day-end/planning time.
   useDayClock();
 
+  // Guards closeInput/cancelInput against firing twice for one open session
+  // (e.g. our own Keyboard.dismiss() inside closeInput() also triggers the
+  // keyboardDidHide listener below). Reset whenever a session opens.
+  const isClosingRef = useRef(false);
+
   useEffect(() => {
     if (inputVisible) {
       // Focus once the input bar has mounted (or when it re-mounts for a new target).
@@ -66,6 +71,19 @@ export default function HomeScreen() {
       return () => clearTimeout(id);
     }
   }, [inputVisible]);
+
+  // Spec 3.3: the input bar closes whenever the keyboard hides for any
+  // reason (tap outside, keyboard dismiss, swipe down, leaving the
+  // screen). Re-subscribed whenever draft/editingTaskId change so the
+  // listener always closes over their latest values, not stale ones from
+  // when the input first opened.
+  useEffect(() => {
+    if (!inputVisible) return;
+    const subscription = Keyboard.addListener('keyboardDidHide', () => {
+      closeInput();
+    });
+    return () => subscription.remove();
+  }, [inputVisible, editingTaskId, draft]);
 
   /** Saves whatever is currently in the input (add, or edit of `editingTaskId`). */
   function commitDraft() {
@@ -82,13 +100,18 @@ export default function HomeScreen() {
       closeInput();
     } else {
       // Adding: Return adds and keeps the keyboard open for fast entry.
+      // blurOnSubmit is false on the TextInput, so this never hides the
+      // keyboard, and the keyboardDidHide listener above never fires here.
       const text = draft;
       setDraft('');
       if (text.trim().length > 0) addTask(selectedView, text);
     }
   }
 
+  /** Saves any non-empty draft first, then closes the input bar. */
   function closeInput() {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
     commitDraft();
     setEditingTaskId(null);
     setDraft('');
@@ -96,12 +119,34 @@ export default function HomeScreen() {
     setInputVisible(false);
   }
 
+  /**
+   * Closes the input bar WITHOUT saving -- used when the task being edited
+   * is completed or deleted out from under it (spec 3.3).
+   */
+  function cancelInput() {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    setEditingTaskId(null);
+    setDraft('');
+    setInputVisible(false);
+    Keyboard.dismiss();
+  }
+
   /** Opens the input bar for a new task (task=null) or to edit an existing one. */
   function openInputFor(task: Task | null) {
+    isClosingRef.current = false; // fresh session
     commitDraft(); // save whatever was already being entered/edited first
     setEditingTaskId(task?.id ?? null);
     setDraft(task?.text ?? '');
     setInputVisible(true);
+  }
+
+  /** If the task currently being edited gets completed (e.g. swiped), drop the edit without saving. */
+  function handleTaskComplete(task: Task) {
+    if (task.id === editingTaskId) {
+      cancelInput();
+    }
+    completeTask(task);
   }
 
   if (!isReady) {
@@ -142,7 +187,7 @@ export default function HomeScreen() {
             contentContainerStyle={[styles.listContent, tasks.length === 0 && styles.emptyContainer]}
             ListEmptyComponent={<Text style={styles.empty}>Nothing here. Tap + to add.</Text>}
             renderItem={({ item }) => (
-              <TaskRow task={item} onComplete={completeTask} onEdit={(task) => openInputFor(task)} />
+              <TaskRow task={item} onComplete={handleTaskComplete} onEdit={(task) => openInputFor(task)} />
             )}
             ListFooterComponent={
               showFallbackLink ? (
@@ -160,7 +205,7 @@ export default function HomeScreen() {
       </KeyboardAvoidingView>
 
       {!inputVisible ? <AddFab onPress={() => openInputFor(null)} /> : null}
-      {pendingUndo ? <UndoPill onUndo={undoPending} /> : null}
+      {pendingUndo ? <UndoPill key={pendingUndo.task.id} onUndo={undoPending} /> : null}
 
       <CarryOverSheet
         visible={carrySheetVisible}

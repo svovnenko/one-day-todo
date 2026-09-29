@@ -71,10 +71,10 @@ export function remove(id: string): void {
 
 /**
  * Re-inserts a task exactly as it was. The normal Undo flow never deletes a
- * task from SQLite while its 4-second undo window is open (the row is only
- * hidden in memory, so the app being killed mid-window is a safe failure —
- * see spec section 5) and calls `remove()` once the window commits. This is
- * a safety net for callers that do delete optimistically.
+ * task from SQLite while its undo window is open (the row is only hidden
+ * in memory, so the app being killed mid-window is a safe failure -- see
+ * spec section 5) and calls `remove()` once the window commits. This is a
+ * safety net for callers that do delete optimistically.
  */
 export function restore(task: Task): void {
   getDb().runSync(

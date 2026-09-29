@@ -29,10 +29,10 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
   function handleFullSwipe() {
     if (isCompleting) return;
     setIsCompleting(true);
-    // Safety net: the row must never stay open. It's about to fade out
-    // anyway, but snap it back to closed right away rather than leaving it
-    // resting on the revealed grey/checkmark zone during the strike-through.
-    swipeableRef.current?.close();
+    // The row stays exactly where the swipe left it (open, revealing the
+    // grey/checkmark zone) -- it must never slide back closed. Only the
+    // fade below hides it, and it fades everything (row + revealed zone)
+    // together, so nothing is left showing once the text has faded.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setTimeout(() => {
       Animated.timing(opacity, {
@@ -44,24 +44,24 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
   }
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      friction={2}
-      leftThreshold={80}
-      dragOffsetFromLeftEdge={5}
-      overshootLeft={false}
-      enabled={!isCompleting}
-      renderLeftActions={() => (
-        <View style={styles.actionBackground}>
-          <Text style={styles.checkmark}>✓</Text>
-        </View>
-      )}
-      // Only left actions exist (spec: swipe right to complete), so any
-      // "open" event -- regardless of the reported direction -- means the
-      // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
-      // for a rightward drag that opens the left action panel, not LEFT.)
-      onSwipeableOpen={() => handleFullSwipe()}>
-      <Animated.View style={{ opacity }}>
+    <Animated.View style={{ opacity }}>
+      <Swipeable
+        ref={swipeableRef}
+        friction={2}
+        leftThreshold={80}
+        dragOffsetFromLeftEdge={5}
+        overshootLeft={false}
+        enabled={!isCompleting}
+        renderLeftActions={() => (
+          <View style={styles.actionBackground}>
+            <Text style={styles.checkmark}>✓</Text>
+          </View>
+        )}
+        // Only left actions exist (spec: swipe right to complete), so any
+        // "open" event -- regardless of the reported direction -- means the
+        // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
+        // for a rightward drag that opens the left action panel, not LEFT.)
+        onSwipeableOpen={() => handleFullSwipe()}>
         <Pressable style={styles.row} onPress={() => !isCompleting && onEdit(task)}>
           <Text style={[styles.text, isCompleting && styles.textCompleting]} numberOfLines={1}>
             {task.text}
@@ -72,8 +72,8 @@ export function TaskRow({ task, onComplete, onEdit }: Props) {
             ) : null}
           </Text>
         </Pressable>
-      </Animated.View>
-    </Swipeable>
+      </Swipeable>
+    </Animated.View>
   );
 }
 

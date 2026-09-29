@@ -72,10 +72,10 @@ The target user is the owner only (single user, a personal app).
 - A task is **text only** (single line, trimmed, 1–200 chars; empty input is ignored).
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Swipe right** on a task → it completes:
-  - A light haptic fires; the row shows strike-through and grey briefly, then collapses with a 150ms fade.
+  - A light haptic fires; the row **stays at its swiped position** (it must not slide back), shows strike-through and grey briefly, then collapses with a 150ms fade.
   - An **Undo pill** appears at the bottom center: `Done · Undo`. It is dark `#1C1C1E` with white 15pt text, a rounded pill, and sits above the FAB and the safe area.
-  - It stays for **4 seconds**. Tapping **Undo** restores the task to its original position.
-  - After 4 seconds, or when another task is completed (only one pending undo at a time; the previous one is committed), the task is **deleted permanently**.
+  - It stays for **3 seconds**. A thin white line (2pt, 50% opacity) along the bottom inside the pill shrinks from full width to zero over those 3 seconds. Tapping **Undo** restores the task to its original position.
+  - After 3 seconds, or when another task is completed (only one pending undo at a time; the previous one is committed), the task is **deleted permanently**.
 - **Tap** a task → edit its text (reuses the input bar, prefilled). Saving empty text deletes the task (also with the Undo pill).
 - A tap never completes a task, which prevents accidental deletions.
 - No reordering, no due dates, no notes.
@@ -85,7 +85,8 @@ The target user is the owner only (single user, a personal app).
 - Tapping it opens a **text input bar docked above the keyboard** (placeholder: `New task`).
 - The keyboard starts in **lowercase** (`autoCapitalize="none"`) for both adding and editing. The text is saved exactly as typed.
 - **Return** adds the task, clears the field, and **keeps the keyboard open** for fast entry of several lines.
-- Tapping outside the field or pressing the keyboard dismiss closes the input. Any non-empty text is saved first.
+- The input bar closes whenever the keyboard hides (tap outside, keyboard dismiss, swipe down, leaving the screen). Any non-empty text is saved first.
+- If the task being edited is completed or deleted (for example by a swipe), the input bar closes **without saving** and the draft is cleared.
 
 ### 3.4 Carry-over (moving unfinished tasks) + counter
 - When the app is active **in planning mode**, today has **≥1 unfinished task**, and the prompt hasn't been shown yet for this logical day, show a **bottom sheet**:
@@ -219,9 +220,9 @@ __tests__/             # jest-expo unit tests for src/logic/*
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Add 3 tasks with Return between them | All 3 appear in order; the keyboard stays open |
-| 2 | Swipe right on a task | It is struck through and removed; the Undo pill shows for 4s; the task is still gone after an app restart |
+| 2 | Swipe right on a task | It is struck through and removed; the Undo pill shows for 3s with a shrinking line; the task is still gone after an app restart |
 | 3 | Swipe right, then tap Undo | The task returns to its original position |
-| 4 | Complete task A, then task B within 4s | A is committed (deleted); the pill now refers to B |
+| 4 | Complete task A, then task B within 3s | A is committed (deleted); the pill now refers to B |
 | 5 | Tap a task, change the text, save | The text is updated; nothing is completed |
 | 6 | Open the app at 14:00 | Today is selected; there is **no Tomorrow label** and no way to reach Tomorrow |
 | 7 | Open the app at 20:05 with 2 unfinished tasks today | Tomorrow is selected; the carry-over sheet lists 2 checked tasks |
@@ -286,7 +287,7 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Carry-over counter (×N, unchecked at ≥3) | **Accepted** |
 | Daily "N done" progress line | **Rejected**: "done and forget" |
 | Store/dev build | **Postponed**. Code backup via git/GitHub |
-| Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo pill (4s) |
+| Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo pill (3s) |
 | Home/lock screen widget | **Rejected** |
 | Soft task-limit hint | **Rejected** |
 

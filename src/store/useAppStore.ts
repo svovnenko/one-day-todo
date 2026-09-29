@@ -10,13 +10,15 @@ import { resolveView } from '@/logic/viewLock';
 export type View = 'today' | 'tomorrow';
 export type Mode = 'day' | 'planning';
 
-const UNDO_WINDOW_MS = 4000;
+/** Exported so the Undo pill's shrinking-line animation can't disagree with the store's actual timeout (spec 3.2). */
+export const UNDO_WINDOW_MS = 3000;
 
 /**
  * A task the user just completed (swiped right) or emptied out (edited to
  * blank text). It stays in SQLite untouched until the window commits, so
  * killing the app mid-window loses nothing (spec section 5) -- only the UI
- * hides it and shows the Undo pill. `timeoutId` auto-commits after 4s.
+ * hides it and shows the Undo pill. `timeoutId` auto-commits after
+ * UNDO_WINDOW_MS.
  */
 type PendingUndo = {
   task: tasksRepo.Task;
@@ -46,7 +48,7 @@ type AppState = {
   addTask: (view: View, text: string) => void;
   /** Saving empty text completes (deletes-with-undo) the task instead (spec 3.2). */
   editTask: (id: string, text: string) => void;
-  /** Swipe-right completion: opens (or replaces) the 4s Undo window. */
+  /** Swipe-right completion: opens (or replaces) the Undo window (UNDO_WINDOW_MS). */
   completeTask: (task: tasksRepo.Task) => void;
   /** Cancels the pending deletion; the task simply stays where it was. */
   undoPending: () => void;
