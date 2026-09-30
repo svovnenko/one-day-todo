@@ -1,5 +1,7 @@
 # One-Day To-Do
 
+[![CI](https://github.com/svovnenko/one-day-todo/actions/workflows/ci.yml/badge.svg)](https://github.com/svovnenko/one-day-todo/actions/workflows/ci.yml)
+
 A minimal single-day to-do list for iPhone and Android, built with Expo
 and Expo Router. Add tasks for today, swipe right to complete (with a
 2-second Undo), and in the evening move whatever's left over to
@@ -23,6 +25,14 @@ Scan the QR code with the iPhone Camera app to open it in **Expo Go**. Phone and
 ```bash
 npm test
 ```
+
+## Quality checks
+
+```bash
+npm run check
+```
+
+Runs typecheck, lint (`eslint`, 0 errors/0 warnings), and the test suite -- the same three steps CI runs on every push and pull request to `main`. `npm run format` applies Prettier; `npm run lint` runs just ESLint.
 
 ## Publishing an update
 
