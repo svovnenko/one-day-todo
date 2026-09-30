@@ -3,6 +3,7 @@ import { Keyboard, LayoutAnimation } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import HomeScreen from '../app/index';
+import * as tasksRepo from '@/db/tasksRepo';
 import { useAppStore } from '@/store/useAppStore';
 import { getAllFakeTasks, resetFakeRepos } from './testUtils/fakeRepos';
 
@@ -146,6 +147,25 @@ it('completing a task and letting the 2s Undo window pass: gone from the list an
 
   expect(screen.queryByText('Water the plants')).toBeNull();
   expect(getAllFakeTasks()).toHaveLength(0);
+});
+
+it('a long task (already in the DB, past any new-input limit) wraps instead of being truncated (spec v8)', async () => {
+  const screen = await renderHome();
+  const longText =
+    'A very long task that would have been truncated with an ellipsis before spec v8 removed numberOfLines';
+
+  // Seeded straight into the repo, bypassing the store's addTask (and its
+  // sanitizeTaskText length cap) entirely -- this is exactly the
+  // "existing tasks longer than the limit are kept as they are, just not
+  // truncated for display" scenario spec v8 describes.
+  await act(async () => {
+    const { todayDay } = useAppStore.getState();
+    tasksRepo.add(todayDay, longText);
+    useAppStore.getState().refreshTasks();
+  });
+
+  const textElement = await screen.findByText(longText);
+  expect(textElement.props.numberOfLines).toBeUndefined();
 });
 
 it('filling a list to 10: the "Full" footer shows, and + no longer opens the input', async () => {

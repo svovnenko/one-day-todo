@@ -133,7 +133,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isSelected, disabled }}
                 >
-                  <Text style={[styles.rowText, textStyle]} numberOfLines={1}>
+                  <Text style={[styles.rowText, textStyle]}>
                     {task.text}
                     {task.carryCount >= 1 ? <Text style={styles.counter}>{'  ×' + task.carryCount}</Text> : null}
                   </Text>
@@ -187,9 +187,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: layout.rowHeight,
+    paddingVertical: 6,
     gap: 12,
   },
-  rowText: { flex: 1, fontSize: 17 },
+  // Spec v8: wraps onto as many lines as needed instead of truncating --
+  // minHeight (38) plus this paddingVertical keeps a single-line row the
+  // same height as before; longer text just grows the row.
+  rowText: { flex: 1, fontSize: 17, lineHeight: 22 },
   rowTextSelected: { color: colors.text },
   rowTextUnselected: { color: colors.muted },
   rowTextFaded: { color: colors.faint },

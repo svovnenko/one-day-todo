@@ -125,7 +125,7 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
           onSwipeableOpen={() => handleFullSwipe()}
         >
           <View style={styles.row}>
-            <Text style={[styles.text, isCompleting && styles.textCompleting]} numberOfLines={1}>
+            <Text style={[styles.text, isCompleting && styles.textCompleting]}>
               {task.text}
               {task.carryCount >= 1 ? (
                 <Text style={[styles.counter, isCompleting && styles.textCompleting]}>{'  ×' + task.carryCount}</Text>
@@ -143,9 +143,13 @@ const styles = StyleSheet.create({
     minHeight: layout.rowHeight,
     justifyContent: 'center',
     paddingHorizontal: layout.screenPadding,
+    paddingVertical: 6,
     backgroundColor: colors.background,
   },
-  text: { fontSize: type.task, color: colors.text },
+  // lineHeight 26 + the row's 6pt top/bottom padding adds up to exactly
+  // layout.rowHeight (38) for a single line, so a one-line row looks
+  // identical to before wrapping existed; extra lines just grow the row.
+  text: { fontSize: type.task, lineHeight: 26, color: colors.text },
   textCompleting: { color: colors.faint, textDecorationLine: 'line-through' },
   counter: { fontSize: type.counter, color: colors.faint },
   actionBackground: {
