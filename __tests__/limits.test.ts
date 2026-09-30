@@ -1,4 +1,4 @@
-import { freeSlots, isListFull, MAX_CARRY_COUNT, OPEN_TASK_LIMIT } from '@/logic/limits';
+import { freeSlots, isListFull, MAX_CARRY_COUNT, MAX_TASK_LENGTH, OPEN_TASK_LIMIT } from '@/logic/limits';
 
 describe('isListFull', () => {
   it('is false below the limit', () => {
@@ -45,4 +45,8 @@ describe('freeSlots', () => {
 
 it('MAX_CARRY_COUNT is 5 (spec 3.4 v5)', () => {
   expect(MAX_CARRY_COUNT).toBe(5);
+});
+
+it('MAX_TASK_LENGTH is 60 (spec 3.2 v8)', () => {
+  expect(MAX_TASK_LENGTH).toBe(60);
 });

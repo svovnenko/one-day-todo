@@ -7,7 +7,7 @@ import { batchCompletesToday } from '@/logic/completion';
 import { CompletionBatch, type CompletionState } from '@/logic/completionBatch';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { logDevError } from '@/logic/devError';
-import { freeSlots, isListFull } from '@/logic/limits';
+import { freeSlots, isListFull, MAX_TASK_LENGTH } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
 import { reconcileTaskList } from '@/logic/taskListDiff';
@@ -142,9 +142,15 @@ type AppState = {
   ) => void;
 };
 
-/** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */
+/**
+ * Trims, collapses to a single line, and caps length per spec 3.2 v8
+ * (1-MAX_TASK_LENGTH chars). Applies to new input only -- an existing
+ * task already longer than that (from before this limit existed) is
+ * never retroactively truncated, since this only ever runs on text a
+ * user is currently typing in.
+ */
 function sanitizeTaskText(raw: string): string {
-  return raw.replace(/\r?\n/g, ' ').trim().slice(0, 200);
+  return raw.replace(/\r?\n/g, ' ').trim().slice(0, MAX_TASK_LENGTH);
 }
 
 export const useAppStore = create<AppState>((set, get) => {

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { MAX_TASK_LENGTH } from '@/logic/limits';
 import { colors, type } from '@/theme';
+
+/** Spec 3.2 v8: the remaining-characters counter only appears once this close to the limit. */
+const COUNTER_THRESHOLD = 10;
 
 type Props = {
   /** Return: add this (non-empty) text and keep the keyboard open for fast entry. */
@@ -77,6 +81,8 @@ export function InputBar({ onAdd, onClose }: Props) {
     if (text.trim().length > 0) onAdd(text);
   }
 
+  const remaining = MAX_TASK_LENGTH - draft.length;
+
   return (
     <View style={styles.bar}>
       <TextInput
@@ -89,20 +95,24 @@ export function InputBar({ onAdd, onClose }: Props) {
         returnKeyType="done"
         blurOnSubmit={false}
         onSubmitEditing={handleSubmit}
-        maxLength={200}
+        maxLength={MAX_TASK_LENGTH}
         autoCapitalize="none"
       />
+      {remaining <= COUNTER_THRESHOLD ? <Text style={styles.counter}>{remaining}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.background,
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
-  input: { fontSize: type.input, color: colors.text, padding: 0 },
+  input: { flex: 1, fontSize: type.input, color: colors.text, padding: 0 },
+  counter: { fontSize: type.counter, color: colors.muted, marginLeft: 8 },
 });

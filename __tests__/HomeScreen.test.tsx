@@ -71,6 +71,37 @@ async function swipeComplete(screen: Screen, taskNumber: number) {
   await fireEvent(swipeable, 'swipeableOpen');
 }
 
+it('the remaining-characters counter appears only within 10 of the 60-char limit (spec v8)', async () => {
+  const screen = await renderHome();
+  await fireEvent.press(screen.getByLabelText('Add task'));
+  const input = screen.getByPlaceholderText('New task');
+
+  await fireEvent.changeText(input, 'a'.repeat(40)); // 20 remaining -- hidden
+  expect(screen.queryByText('20')).toBeNull();
+
+  await fireEvent.changeText(input, 'a'.repeat(50)); // exactly 10 remaining -- shown
+  expect(screen.getByText('10')).toBeTruthy();
+
+  await fireEvent.changeText(input, 'a'.repeat(60)); // 0 remaining -- shown
+  expect(screen.getByText('0')).toBeTruthy();
+});
+
+it('typing past 60 characters and submitting caps the saved task at 60 (spec v8)', async () => {
+  const screen = await renderHome();
+  await fireEvent.press(screen.getByLabelText('Add task'));
+  const input = screen.getByPlaceholderText('New task');
+
+  // fireEvent.changeText sets the value directly, bypassing the native
+  // TextInput's own maxLength enforcement -- this exercises the store's
+  // OWN cap (sanitizeTaskText), the one that actually matters, since a
+  // real device's native input never lets typing reach this length at all.
+  await fireEvent.changeText(input, 'a'.repeat(90));
+  await fireEvent(input, 'submitEditing');
+
+  expect(getAllFakeTasks()).toHaveLength(1);
+  expect(getAllFakeTasks()[0].text).toHaveLength(60);
+});
+
 it('adding 2 tasks with Return: both render, and the input bar stays open', async () => {
   const screen = await renderHome();
   await addTask(screen, 'Buy milk');

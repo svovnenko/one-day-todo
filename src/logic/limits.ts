@@ -1,6 +1,8 @@
 /** Spec 3.2/3.4 v5: hard limits on task counts. */
 export const OPEN_TASK_LIMIT = 10;
 export const MAX_CARRY_COUNT = 5;
+/** Spec 3.2 v8: new tasks are capped at 60 characters -- existing longer tasks are kept as-is, never truncated. */
+export const MAX_TASK_LENGTH = 60;
 
 /**
  * True once a list (Today or Tomorrow) has reached the open-task limit.
