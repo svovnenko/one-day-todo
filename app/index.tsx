@@ -28,6 +28,7 @@ import { useFooterLines } from '@/hooks/useFooterLines';
 import { useInputSession } from '@/hooks/useInputSession';
 import { excludeCompleting, visibleTasks } from '@/logic/completion';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
+import { logDevError } from '@/logic/devError';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
@@ -78,7 +79,7 @@ export default function HomeScreen() {
     try {
       init();
     } catch (error) {
-      console.error('Failed to initialize app:', error);
+      logDevError('HomeScreen init', error);
     }
   }, [init]);
 

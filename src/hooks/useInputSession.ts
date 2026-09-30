@@ -34,11 +34,12 @@ export function useInputSession(flagScrollToEnd: () => void) {
       const countBefore =
         view === 'today' ? useAppStore.getState().todayTasks.length : useAppStore.getState().tomorrowTasks.length;
       if (isListFull(countBefore)) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // best-effort, never user-visible
         return false;
       }
       if (!addTask(view, text)) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // safety net -- the store refused despite the pre-check above
+        // safety net -- the store refused despite the pre-check above
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // best-effort, never user-visible
         return false;
       }
       flagScrollToEnd();

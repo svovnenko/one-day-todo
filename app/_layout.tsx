@@ -19,7 +19,7 @@ configureNotificationHandler();
 // isReady effect calls hideSplashOnce() -- so the splash goes straight to
 // the real list instead of to a blank white frame while the store is
 // still loading. Must be called before anything else renders.
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch(() => {}); // best-effort, never user-visible
 
 // Bumped each time this boundary actually catches an error, so a SECOND
 // failure in the same session (most likely: Reload didn't fix it) offers
@@ -49,6 +49,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
       </Pressable>
       {hasFailedBefore ? (
         <Pressable onPress={() => Updates.reloadAsync().catch(() => {})} hitSlop={8}>
+          {/* Nothing more to do if even a restart fails to kick off -- the user is already looking at this screen. */}
           <Text style={styles.errorButton}>Restart app</Text>
         </Pressable>
       ) : null}

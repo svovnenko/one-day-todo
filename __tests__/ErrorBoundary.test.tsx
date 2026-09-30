@@ -1,5 +1,7 @@
 import { renderRouter } from 'expo-router/testing-library';
 
+import * as RootLayout from '../app/_layout';
+
 // Renders through Expo Router's own error-boundary wiring (the
 // `ErrorBoundary` export from app/_layout.tsx), not the component in
 // isolation -- so this also verifies the export is actually wired up.
@@ -14,7 +16,7 @@ it('a route that throws is replaced by the error screen', async () => {
 
   const { findByText } = await renderRouter(
     {
-      _layout: require('../app/_layout'),
+      _layout: RootLayout,
       index: ThrowingScreen,
       settings: () => null, // _layout.tsx declares this screen; stubbed so the router doesn't warn about a missing route
     },

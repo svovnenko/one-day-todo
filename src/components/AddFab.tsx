@@ -32,7 +32,7 @@ export function AddFab({ onPress, isFull = false }: Props) {
 
   function handlePress() {
     if (isFull) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {}); // best-effort, never user-visible
       translateX.setValue(0);
       Animated.sequence(
         SHAKE_STEPS.map((toValue) =>

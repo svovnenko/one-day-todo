@@ -11,5 +11,5 @@ let hidden = false;
 export function hideSplashOnce(): void {
   if (hidden) return;
   hidden = true;
-  SplashScreen.hideAsync().catch(() => {});
+  SplashScreen.hideAsync().catch(() => {}); // best-effort, never user-visible
 }

@@ -2,6 +2,10 @@
 // scenarios exercised at the screen level). Runs once per test file,
 // before that file's own imports resolve.
 
+// Gesture-handler's own recommended jest setup (mocks its native module and
+// a couple of RN components it wraps).
+import 'react-native-gesture-handler/jestSetup';
+
 // Reanimated's own bundled `/mock` still imports its real index (and so
 // the real native react-native-worklets runtime) internally in this
 // version, which throws under Jest with no native module registered --
@@ -19,10 +23,6 @@ jest.mock('react-native-reanimated', () => ({
   withTiming: (toValue: number) => toValue,
 }));
 
-// Gesture-handler's own recommended jest setup (mocks its native module and
-// a couple of RN components it wraps).
-require('react-native-gesture-handler/jestSetup');
-
 // ReanimatedSwipeable itself (not just gesture-handler's native module)
 // leans on a much larger slice of reanimated (useAnimatedRef, measure,
 // runOnUI, withSpring, ...) purely to drive its drag animation -- none of
@@ -32,7 +32,9 @@ require('react-native-gesture-handler/jestSetup');
 // own suggestion does: `fireEvent(getByTestId(...), 'swipeableOpen')`
 // (TaskRow sets `testID` to `task-swipeable-${task.id}`).
 jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- a jest.mock() factory is a plain function body, not module scope, so top-level `import` can't reach these
   const { forwardRef, useImperativeHandle, createElement } = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see above
   const { View } = require('react-native');
   const MockSwipeable = forwardRef(
     (props: { testID?: string; onSwipeableOpen?: () => void; children?: unknown }, ref: unknown) => {
@@ -40,6 +42,7 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
       return createElement(View, { testID: props.testID, onSwipeableOpen: props.onSwipeableOpen }, props.children);
     }
   );
+  MockSwipeable.displayName = 'MockSwipeable';
   return { __esModule: true, default: MockSwipeable };
 });
 
@@ -81,7 +84,7 @@ jest.mock('expo-splash-screen', () => ({
 // own Keyboard.dismiss() calls do, by calling it directly.
 jest.mock('react-native', () => {
   const RN = jest.requireActual('react-native');
-  const listeners: Record<string, Array<() => void>> = {};
+  const listeners: Record<string, (() => void)[]> = {};
   RN.Keyboard.addListener = (eventType: string, callback: () => void) => {
     (listeners[eventType] ??= []).push(callback);
     return {

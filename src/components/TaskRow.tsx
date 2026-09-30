@@ -69,7 +69,7 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
     // grey/checkmark zone) -- it must never slide back closed. Only the
     // fade below hides it, and it fades everything (row + revealed zone)
     // together, so nothing is left showing once the text has faded.
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); // best-effort, never user-visible
     // Start the Undo window/button right now, before the animation below
     // even begins -- this is purely cosmetic and mustn't delay it.
     onSwipeThreshold(task);

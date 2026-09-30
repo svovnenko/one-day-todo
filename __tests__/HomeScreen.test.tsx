@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { Keyboard } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import HomeScreen from '../app/index';
@@ -144,7 +145,7 @@ it('keyboard hide with a non-empty draft: saved, and the input bar closes', asyn
   await fireEvent.changeText(screen.getByPlaceholderText('New task'), 'Draft task');
 
   await act(async () => {
-    require('react-native').Keyboard.dismiss();
+    Keyboard.dismiss();
   });
 
   expect(await screen.findByText('Draft task')).toBeTruthy();
@@ -168,7 +169,7 @@ it('keyboard hide with a non-empty draft on an already-full list: the draft is d
 
   await fireEvent.changeText(input, 'Should be discarded');
   await act(async () => {
-    require('react-native').Keyboard.dismiss();
+    Keyboard.dismiss();
   });
 
   expect(screen.queryByText('Should be discarded')).toBeNull();

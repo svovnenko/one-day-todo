@@ -6,6 +6,7 @@ import { movableTaskCount, moveTasks, shouldShowCarryPrompt } from '@/logic/carr
 import { batchCompletesToday } from '@/logic/completion';
 import { CompletionBatch, type CompletionState } from '@/logic/completionBatch';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
+import { logDevError } from '@/logic/devError';
 import { freeSlots, isListFull } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
 import { planRollover } from '@/logic/rollover';
@@ -205,7 +206,10 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ settings });
       get().runRollover();
       set({ isReady: true });
-      applyReminderSchedule(settings).catch(() => {}); // reschedules under the (possibly corrected) settings
+      // Reschedules under the (possibly corrected) settings. Best-effort:
+      // no reminder just means the user doesn't get a "Plan tomorrow"
+      // notification, not a broken app.
+      applyReminderSchedule(settings).catch((error) => logDevError('applyReminderSchedule (init)', error));
     },
 
     refreshTasks: () => {
@@ -337,7 +341,8 @@ export const useAppStore = create<AppState>((set, get) => {
       const settings = { ...get().settings, ...partial };
       set({ settings });
       get().runRollover(); // spec 3.6: recompute the mode immediately
-      applyReminderSchedule(settings).catch(() => {});
+      // Best-effort, same as init()'s call -- see the comment there.
+      applyReminderSchedule(settings).catch((error) => logDevError('applyReminderSchedule (updateSchedule)', error));
     },
   };
 });
