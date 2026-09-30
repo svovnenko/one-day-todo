@@ -33,15 +33,21 @@ export function useDayClock() {
       if (pTimer.current) clearTimeout(pTimer.current);
 
       const now = new Date();
-      eTimer.current = setTimeout(() => {
-        runRollover();
-        armTimers();
-      }, msUntilNext(now, dayEndTime));
+      eTimer.current = setTimeout(
+        () => {
+          runRollover();
+          armTimers();
+        },
+        msUntilNext(now, dayEndTime)
+      );
 
-      pTimer.current = setTimeout(() => {
-        refreshMode();
-        armTimers();
-      }, msUntilNext(now, planningTime));
+      pTimer.current = setTimeout(
+        () => {
+          refreshMode();
+          armTimers();
+        },
+        msUntilNext(now, planningTime)
+      );
     }
 
     armTimers();

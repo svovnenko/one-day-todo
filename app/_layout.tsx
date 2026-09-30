@@ -37,7 +37,8 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.background },
-          }}>
+          }}
+        >
           <Stack.Screen name="index" />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         </Stack>

@@ -113,14 +113,13 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
           // "open" event -- regardless of the reported direction -- means the
           // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
           // for a rightward drag that opens the left action panel, not LEFT.)
-          onSwipeableOpen={() => handleFullSwipe()}>
+          onSwipeableOpen={() => handleFullSwipe()}
+        >
           <View style={styles.row}>
             <Text style={[styles.text, isCompleting && styles.textCompleting]} numberOfLines={1}>
               {task.text}
               {task.carryCount >= 1 ? (
-                <Text style={[styles.counter, isCompleting && styles.textCompleting]}>
-                  {'  ×' + task.carryCount}
-                </Text>
+                <Text style={[styles.counter, isCompleting && styles.textCompleting]}>{'  ×' + task.carryCount}</Text>
               ) : null}
             </Text>
           </View>

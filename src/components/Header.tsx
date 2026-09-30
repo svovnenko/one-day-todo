@@ -20,9 +20,7 @@ export function Header({ todayLabel, tomorrowLabel, selectedView, mode, onSelect
     <View style={styles.row}>
       <View style={styles.labels}>
         <Pressable onPress={() => onSelectView('today')} hitSlop={8}>
-          <Text style={[styles.label, selectedView === 'today' && styles.labelActive]}>
-            Today · {todayLabel}
-          </Text>
+          <Text style={[styles.label, selectedView === 'today' && styles.labelActive]}>Today · {todayLabel}</Text>
         </Pressable>
         {mode === 'planning' ? (
           <Pressable onPress={() => onSelectView('tomorrow')} hitSlop={8}>

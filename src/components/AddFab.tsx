@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -24,7 +24,11 @@ const SHAKE_STEP_DURATION_MS = 60; // 5 steps * 60ms = ~300ms total, per spec 3.
  * anything.
  */
 export function AddFab({ onPress, isFull = false }: Props) {
-  const translateX = useRef(new Animated.Value(0)).current;
+  // Lazy useState instead of useRef: this Animated.Value is only ever
+  // mutated through its own methods (setValue/timing), never reassigned,
+  // so it's a one-time-computed value rather than a mutable ref cell --
+  // and unlike a ref, reading it back out during render is safe.
+  const [translateX] = useState(() => new Animated.Value(0));
 
   function handlePress() {
     if (isFull) {

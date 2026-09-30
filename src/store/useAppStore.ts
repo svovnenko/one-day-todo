@@ -136,7 +136,9 @@ type AppState = {
    * given, immediately recomputes the mode/day keys, and reschedules (or
    * cancels) the daily reminder notification (spec 3.6).
    */
-  updateSchedule: (partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>) => void;
+  updateSchedule: (
+    partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>
+  ) => void;
 };
 
 /** Trims, collapses to a single line, and caps length per spec 3.2 (1-200 chars). */

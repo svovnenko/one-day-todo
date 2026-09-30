@@ -200,7 +200,7 @@ describe('CompletionBatch', () => {
       expect(batch.completion.A).toBeUndefined();
     });
 
-    it('a second Undo restore keeps bumping the same task\'s restoreVersion', () => {
+    it("a second Undo restore keeps bumping the same task's restoreVersion", () => {
       const batch = new CompletionBatch<FakeTask>(WINDOW_MS, jest.fn());
 
       batch.add(task('A'));

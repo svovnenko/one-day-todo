@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -34,21 +34,39 @@ const SHEET_OFFSCREEN_OFFSET = 320;
  */
 export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }: Props) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const translateY = useRef(new Animated.Value(SHEET_OFFSCREEN_OFFSET)).current;
+  // Lazy useState instead of useRef: only ever mutated through its own
+  // methods (setValue/timing), never reassigned, so it's a one-time
+  // value rather than a mutable ref cell -- safe to read during render.
+  const [translateY] = useState(() => new Animated.Value(SHEET_OFFSCREEN_OFFSET));
+  // Tracks the previous `visible` so the hidden -> visible transition can
+  // be detected below, the same thing the old effect's `[visible]`
+  // dependency array did.
+  const [wasVisible, setWasVisible] = useState(visible);
 
   const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
   const free = freeSlots(tomorrowTasks.length);
 
-  // Resets the selection to all-unselected only on the hidden -> visible
-  // transition (intentionally depends only on `visible`, not on
-  // `tasks`/`tomorrowTasks` -- app/index.tsx rebuilds those arrays on
-  // every render, and re-initializing on every one of those would snap a
-  // row the user just selected back while the sheet is still open).
-  // Spec 3.4 v6: moving a task to tomorrow must be a conscious choice, so
-  // nothing starts pre-selected -- not even a carryCount-based nudge.
+  // Resets the selection to all-unselected the moment the sheet becomes
+  // visible -- adjusted directly during render (rather than in an
+  // effect) so the very first frame the sheet paints already shows the
+  // reset selection, with no stale-then-corrected flash. Spec 3.4 v6:
+  // moving a task to tomorrow must be a conscious choice, so nothing
+  // starts pre-selected -- not even a carryCount-based nudge.
+  //
+  // Deliberately keyed only on `visible`, not on `tasks`/`tomorrowTasks`
+  // -- app/index.tsx rebuilds those arrays on every render, and
+  // re-initializing on every one of those would snap a row the user just
+  // selected back while the sheet is still open.
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) setChecked({});
+  }
+
+  // The slide-in animation is a real side effect (an imperative
+  // Animated.timing kickoff), so it stays in an effect rather than
+  // joining the render-time adjustment above.
   useEffect(() => {
     if (visible) {
-      setChecked({});
       translateY.setValue(SHEET_OFFSCREEN_OFFSET);
       Animated.timing(translateY, {
         toValue: 0,
@@ -56,8 +74,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
         useNativeDriver: true,
       }).start();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional, see comment above
-  }, [visible]);
+  }, [visible, translateY]);
 
   if (!visible) return null;
 
@@ -129,7 +146,11 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
               );
             })}
           </ScrollView>
-          <Pressable style={[styles.moveButton, moveDisabled && styles.moveButtonDisabled]} onPress={handleMove} disabled={moveDisabled}>
+          <Pressable
+            style={[styles.moveButton, moveDisabled && styles.moveButtonDisabled]}
+            onPress={handleMove}
+            disabled={moveDisabled}
+          >
             <Text style={styles.moveButtonText}>{moveLabel}</Text>
           </Pressable>
           <Pressable style={styles.skipButton} onPress={onSkip}>

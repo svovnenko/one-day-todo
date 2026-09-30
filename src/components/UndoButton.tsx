@@ -45,15 +45,23 @@ const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
  */
 export function UndoButton({ batch, onUndo }: Props) {
   const [mounted, setMounted] = useState(batch !== null);
-  const opacity = useRef(new Animated.Value(batch !== null ? 1 : 0)).current;
+  // Lazy useState instead of useRef: only ever mutated through its own
+  // methods (setValue/timing), never reassigned, so it's a one-time
+  // value rather than a mutable ref cell -- safe to read during render.
+  const [opacity] = useState(() => new Animated.Value(batch !== null ? 1 : 0));
   const progress = useSharedValue(0);
   const previousVersion = useRef<number | null>(null);
 
+  // Appears immediately the moment a batch shows up, adjusted directly
+  // during render (rather than in the effect below) so there's no extra
+  // frame where the button hasn't appeared yet.
+  if (batch !== null && !mounted) {
+    setMounted(true);
+  }
+
   useEffect(() => {
     if (batch) {
-      // Appears immediately, and restarts instantly if it was already
-      // showing (another task just joined the batch).
-      setMounted(true);
+      // Restarts instantly if it was already showing (another task just joined the batch).
       opacity.stopAnimation();
       opacity.setValue(1);
       progress.value = 0;

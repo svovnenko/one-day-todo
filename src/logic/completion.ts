@@ -16,10 +16,7 @@ export function batchCompletesToday(committedTasks: Pick<Task, 'day'>[], todayDa
  * a 'pending' row (still animating out) stays visible; only 'hidden' is
  * removed. This is what the FlatList itself renders.
  */
-export function visibleTasks<T extends { id: string }>(
-  tasks: T[],
-  completion: Record<string, CompletionState>
-): T[] {
+export function visibleTasks<T extends { id: string }>(tasks: T[], completion: Record<string, CompletionState>): T[] {
   return tasks.filter((t) => completion[t.id] !== 'hidden');
 }
 

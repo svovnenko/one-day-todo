@@ -36,8 +36,7 @@ export function getSettings(): Settings {
   const planningTime = getRaw('planningTime') ?? DEFAULT_SETTINGS.planningTime;
   const dayEndTime = getRaw('dayEndTime') ?? DEFAULT_SETTINGS.dayEndTime;
   const reminderEnabledRaw = getRaw('reminderEnabled');
-  const reminderEnabled =
-    reminderEnabledRaw === null ? DEFAULT_SETTINGS.reminderEnabled : reminderEnabledRaw === '1';
+  const reminderEnabled = reminderEnabledRaw === null ? DEFAULT_SETTINGS.reminderEnabled : reminderEnabledRaw === '1';
   const lastCarryPromptDate = getRaw('lastCarryPromptDate');
   const lastCompletedDate = getRaw('lastCompletedDate');
   return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate, lastCompletedDate };

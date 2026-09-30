@@ -84,7 +84,13 @@ export function findByDayAndText(day: string, text: string): Task | null {
 /** Relocates an existing task to the bottom of `day`'s list with a new carry count. */
 export function moveToDay(id: string, day: string, carryCount: number): void {
   const position = nextPosition(day);
-  getDb().runSync('UPDATE tasks SET day = ?, position = ?, carry_count = ? WHERE id = ?', day, position, carryCount, id);
+  getDb().runSync(
+    'UPDATE tasks SET day = ?, position = ?, carry_count = ? WHERE id = ?',
+    day,
+    position,
+    carryCount,
+    id
+  );
 }
 
 export function setCarryCount(id: string, carryCount: number): void {

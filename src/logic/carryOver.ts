@@ -1,4 +1,3 @@
-import type * as TasksRepoModule from '@/db/tasksRepo';
 import type { Task } from '@/db/tasksRepo';
 import { isPlanningMode } from '@/logic/dates';
 import { MAX_CARRY_COUNT } from '@/logic/limits';
@@ -78,8 +77,8 @@ export function buildCarryOverCandidates(todayTasks: Task[], tomorrowTasks: Task
  * testable) without pulling in expo-sqlite's native binding.
  */
 export function moveTasks(taskIds: string[], fromDay: string, toDay: string): void {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const tasksRepo: typeof TasksRepoModule = require('@/db/tasksRepo');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require, see the doc comment above
+  const tasksRepo: typeof import('@/db/tasksRepo') = require('@/db/tasksRepo');
   const idSet = new Set(taskIds);
   for (const task of tasksRepo.listByDay(fromDay)) {
     if (!idSet.has(task.id)) continue;

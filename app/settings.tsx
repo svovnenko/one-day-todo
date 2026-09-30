@@ -79,10 +79,9 @@ export default function SettingsScreen() {
                   <Pressable
                     key={option}
                     style={[styles.dayEndOption, selected && styles.dayEndOptionSelected]}
-                    onPress={() => updateSchedule({ dayEndTime: option })}>
-                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>
-                      {option}
-                    </Text>
+                    onPress={() => updateSchedule({ dayEndTime: option })}
+                  >
+                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>{option}</Text>
                   </Pressable>
                 );
               })}

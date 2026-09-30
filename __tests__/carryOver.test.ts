@@ -62,7 +62,11 @@ describe('isBlockedFromMoving (spec 3.4 v5: max 5 moves)', () => {
 
 describe('movableTaskCount (spec 3.4 v7)', () => {
   it('counts only tasks below MAX_CARRY_COUNT', () => {
-    const tasks = [makeTask({ id: 'a', carryCount: 0 }), makeTask({ id: 'b', carryCount: 4 }), makeTask({ id: 'c', carryCount: 5 })];
+    const tasks = [
+      makeTask({ id: 'a', carryCount: 0 }),
+      makeTask({ id: 'b', carryCount: 4 }),
+      makeTask({ id: 'c', carryCount: 5 }),
+    ];
     expect(movableTaskCount(tasks)).toBe(2);
   });
 
@@ -94,4 +98,3 @@ describe('buildCarryOverCandidates', () => {
     expect(candidate.deduplicates).toBe(false);
   });
 });
-

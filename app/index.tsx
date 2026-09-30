@@ -14,15 +14,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Android needs this opted in explicitly; iOS supports LayoutAnimation by
-// default. Belt-and-suspenders alongside TaskRow's own height-collapse
-// animation: by the time a row actually leaves `tasks` below, its own
-// animation has already brought it to zero height/opacity, so this
-// mainly guards against any residual snap in whatever's left.
-if (Platform.OS === 'android') {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
-
 import { AddFab } from '@/components/AddFab';
 import { CarryOverSheet } from '@/components/CarryOverSheet';
 import { Header } from '@/components/Header';
@@ -40,6 +31,15 @@ import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
+
+// Android needs this opted in explicitly; iOS supports LayoutAnimation by
+// default. Belt-and-suspenders alongside TaskRow's own height-collapse
+// animation: by the time a row actually leaves `tasks` below, its own
+// animation has already brought it to zero height/opacity, so this
+// mainly guards against any residual snap in whatever's left.
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
 export default function HomeScreen() {
   const isReady = useAppStore((s) => s.isReady);
@@ -175,10 +175,7 @@ export default function HomeScreen() {
   // task list" apart from "the same list, re-filtered because the parent
   // re-rendered for an unrelated reason". Excludes every task currently
   // mid-completion (pending or hidden), not just one.
-  const todayUnfinishedTasks = useMemo(
-    () => excludeCompleting(todayTasks, completion),
-    [todayTasks, completion]
-  );
+  const todayUnfinishedTasks = useMemo(() => excludeCompleting(todayTasks, completion), [todayTasks, completion]);
 
   // Stable {version, count} for the Undo button -- derived from
   // pendingBatch (whose reference only changes when the store actually
@@ -205,10 +202,7 @@ export default function HomeScreen() {
   // changed". keyExtractor still legitimately depends on restoreVersion
   // (it needs to change when a task is restored); the others depend on
   // nothing that changes outside of a real list update.
-  const keyExtractor = useCallback(
-    (item: Task) => `${item.id}:${restoreVersion[item.id] ?? 0}`,
-    [restoreVersion]
-  );
+  const keyExtractor = useCallback((item: Task) => `${item.id}:${restoreVersion[item.id] ?? 0}`, [restoreVersion]);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<Task>) => (
