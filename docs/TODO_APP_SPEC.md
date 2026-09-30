@@ -39,7 +39,7 @@ The target user is the owner only (single user, a personal app).
 | Haptics | `expo-haptics` | Light tap on complete |
 | Backend / cloud | **None** | |
 | UI language | **English only** | No i18n library |
-| Theme | **Light only** (force white, even in iOS dark mode) | Matches the reference design |
+| Theme | **Light + dark (v8)**: `System` (default) / `Light` / `Dark` in Settings | Light matches the reference design; dark mirrors it on true black |
 
 **Hard rule:** install packages only with `npx expo install <pkg>`, and only packages that run in Expo Go. **Do not** use MMKV, Realm, or any library that needs a custom dev client.
 
@@ -69,7 +69,8 @@ The target user is the owner only (single user, a personal app).
 - In **planning mode** both labels are shown, and the user can switch between Today and Tomorrow freely. When the app becomes active or crosses P or E, the view resets to the mode default.
 
 ### 3.2 Tasks
-- A task is **text only** (single line, trimmed, 1–200 chars; empty input is ignored).
+- A task is **text only** (trimmed, **1–60 characters (v8)**; empty input is ignored). Line breaks are replaced by spaces. Tasks created before v8 that are longer than 60 characters are kept as they are.
+- **Long text wraps (v8):** a task shows its **full text on as many lines as needed** (at most 2–3 lines with the 60-character limit), with no truncation or "…". Task text uses a 26pt line height. Rows have 6pt vertical padding (a single-line row stays 38pt high), so the gap **between tasks** is clearly bigger than the gap between the lines of one task. The `×N` counter wraps with the text. The move sheet rows wrap the same way.
 - New tasks are **appended to the bottom** of the currently viewed list (Today or Tomorrow).
 - **Open-task limit (v5):** each list (Today, Tomorrow) holds at most **10 open tasks**. Tasks in the pending Undo batch still count until the batch commits, so Undo can never push a list over 10. When a list is full:
   - the + FAB is greyed out (40% opacity);
@@ -129,6 +130,8 @@ A **small grey gear icon** in the top-right corner opens a simple grouped list:
   - `Planning time`: a time picker limited to **12:00–23:59** (default **20:00**)
   - `Day ends at`: a choice of **00:00 / 01:00 / 02:00 / 03:00 / 04:00** (default **04:00**), with the caption: "Tasks left after this time are deleted."
   - `Daily reminder`: an on/off switch (default **on**)
+- **Appearance (v8)**
+  - `Theme`: a choice of **System / Light / Dark** (default **System**). It applies instantly and is stored as the `appearance` setting.
 
 Changing any time setting reschedules the notification immediately and recomputes the mode.
 
@@ -161,7 +164,8 @@ The reference is the owner's screenshot of the "To Do List" app: a plain white p
 | Empty state | Centered grey 17pt: `Nothing here. Tap + to add.` |
 | "Done for today" (v6) | In the **Today** view, when the list is empty **and at least one task was completed today** (a batch committed on this logical day), show a centered grey 17pt `Done for today.` instead of the empty state. There is no animation, icon or sound. The Tomorrow view always uses the normal empty state. |
 | Carry-over sheet | White bottom sheet with a rounded top (16pt). A plain text list: selected rows are black with a `✓` on the right, unselected rows grey, unavailable rows faint; **no checkboxes or circles**. A full-width black `Move N` button and a grey text `Let them go` button. |
-| Dark mode | **Off**: set `"userInterfaceStyle": "light"` in `app.json` |
+| Dark mode (v8) | `app.json` `userInterfaceStyle: "automatic"`. **Dark palette:** background `#000000`; text `#FFFFFF`; muted `#8E8E93`; faint `#5A5A5E`; swipe background and surfaces (FAB, input bar, move sheet) `#1C1C1E`; border `#38383A`; sheet backdrop `rgba(0,0,0,0.6)`. The FAB has no shadow and a white `+`. The Undo button is **inverted** (`#F2F2F7` background, black `Undo` text, black ring). The status bar, time picker (`themeVariant`), error screen and splash (`dark.backgroundColor #000000`) follow the theme. |
+| Input counter (v8) | When 10 or fewer characters remain, a small counter (13pt, muted) at the right edge of the input bar shows the remaining number; typing stops at 0 (`maxLength 60`). |
 
 Date format: `Tue 29 Sep`. Use `Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })`.
 
@@ -273,7 +277,7 @@ __tests__/                 # jest-expo unit tests for src/logic/* (and completio
 
 Milestones 1-9 are done.
 
-1. **Scaffold:** `npx create-expo-app@latest one-day-todo` (TypeScript + Expo Router template); `git init`; push to a private GitHub repo; set `userInterfaceStyle: light`; run in Expo Go.
+1. **Scaffold:** `npx create-expo-app@latest one-day-todo` (TypeScript + Expo Router template); `git init`; push to a private GitHub repo; set `userInterfaceStyle` (now `automatic`, v8); run in Expo Go.
 2. **Data layer:** SQLite schema, repos, and the Zustand store; add/list/delete working.
 3. **Main screen UI:** header, rows (pixel-matched to the spec), FAB, input bar, empty state.
 4. **Complete flow:** swipe right, the Undo pill, commit logic, haptic, fade-out.
@@ -319,6 +323,8 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Store/dev build | **Postponed**. Code backup via git/GitHub |
 | Task backup (JSON export/import) | **Removed (v3)**: deleted and done tasks are permanent; the only way back is the Undo button (2s) |
 | Home/lock screen widget | **Rejected** |
+| Dark theme | **Accepted (v8)**: System (default) / Light / Dark; true black background. Reverses the earlier "light only" decision |
+| Long task text | **Accepted (v8)**: always wrap. The max length drops from 200 to 60 characters (research: concrete, verb-first, scannable tasks; people scan the first 2–3 words) |
 | Soft task-limit hint | **Rejected** (v2). Replaced in v5 by a hard limit of 10 **open** tasks per list |
 | Move limit | **Accepted (v5)**: max 5 moves |
 | "Done for today." closure line | **Accepted (v6)**: the only "reward" is the empty list, named |
@@ -331,4 +337,4 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 
 ## 11. Out of scope (do NOT build)
 
-Accounts or login, cloud sync, any task backup or export/import, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, dark mode, localization, iPad layout, a morning catch-up prompt.
+Accounts or login, cloud sync, any task backup or export/import, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, localization, iPad layout, a morning catch-up prompt.

@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useMemo, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 
-import { colors, layout } from '@/theme';
+import { useTheme } from '@/hooks/useTheme';
+import { type Colors, layout } from '@/theme';
 
 type Props = {
   /** Called only when the FAB is tapped while NOT full -- opens the input bar. */
@@ -15,7 +16,8 @@ const SHAKE_STEPS = [8, -8, 6, -6, 0];
 const SHAKE_STEP_DURATION_MS = 60; // 5 steps * 60ms = ~300ms total, per spec 3.2 v7
 
 /**
- * Spec 3.3 / 4: 56pt white circle, bottom-left, soft shadow, black "+" 24pt.
+ * Spec 3.3 / 4: 56pt circle, bottom-left, soft shadow (none in dark mode --
+ * spec v8), "+" 24pt.
  *
  * Spec 3.2 v7: tapping while full no longer opens a popup/toast -- instead
  * a warning haptic plus a short horizontal shake, and nothing else. The
@@ -24,6 +26,8 @@ const SHAKE_STEP_DURATION_MS = 60; // 5 steps * 60ms = ~300ms total, per spec 3.
  * anything.
  */
 export function AddFab({ onPress, isFull = false }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   // Lazy useState instead of useRef: this Animated.Value is only ever
   // mutated through its own methods (setValue/timing), never reassigned,
   // so it's a one-time-computed value rather than a mutable ref cell --
@@ -62,25 +66,27 @@ export function AddFab({ onPress, isFull = false }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    position: 'absolute',
-    left: 16,
-    bottom: 16,
-  },
-  fab: {
-    width: layout.fabSize,
-    height: layout.fabSize,
-    borderRadius: layout.fabSize / 2,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  fabFull: { opacity: 0.4 },
-  plus: { fontSize: 24, color: colors.text, lineHeight: 26 },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    wrapper: {
+      position: 'absolute',
+      left: 16,
+      bottom: 16,
+    },
+    fab: {
+      width: layout.fabSize,
+      height: layout.fabSize,
+      borderRadius: layout.fabSize / 2,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: colors.shadowOpacity,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: colors.shadowOpacity > 0 ? 4 : 0,
+    },
+    fabFull: { opacity: 0.4 },
+    plus: { fontSize: 24, color: colors.text, lineHeight: 26 },
+  });
+}

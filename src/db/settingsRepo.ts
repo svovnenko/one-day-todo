@@ -1,3 +1,5 @@
+import type { Appearance } from '@/logic/theme';
+
 import { getDb } from './database';
 
 export type Settings = {
@@ -6,6 +8,7 @@ export type Settings = {
   reminderEnabled: boolean;
   lastCarryPromptDate: string | null; // 'YYYY-MM-DD', null if never shown
   lastCompletedDate: string | null; // 'YYYY-MM-DD', null if never emptied Today by completing (spec 3.4/4 v6)
+  appearance: Appearance; // 'system' | 'light' | 'dark', default 'system' (spec 3.6 v8)
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -14,9 +17,13 @@ export const DEFAULT_SETTINGS: Settings = {
   reminderEnabled: true,
   lastCarryPromptDate: null,
   lastCompletedDate: null,
+  appearance: 'system',
 };
 
-type StoredKey = 'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'lastCarryPromptDate' | 'lastCompletedDate';
+const VALID_APPEARANCES: Appearance[] = ['system', 'light', 'dark'];
+
+type StoredKey =
+  'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'lastCarryPromptDate' | 'lastCompletedDate' | 'appearance';
 
 function getRaw(key: StoredKey): string | null {
   const row = getDb().getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -39,7 +46,11 @@ export function getSettings(): Settings {
   const reminderEnabled = reminderEnabledRaw === null ? DEFAULT_SETTINGS.reminderEnabled : reminderEnabledRaw === '1';
   const lastCarryPromptDate = getRaw('lastCarryPromptDate');
   const lastCompletedDate = getRaw('lastCompletedDate');
-  return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate, lastCompletedDate };
+  const appearanceRaw = getRaw('appearance');
+  const appearance = VALID_APPEARANCES.includes(appearanceRaw as Appearance)
+    ? (appearanceRaw as Appearance)
+    : DEFAULT_SETTINGS.appearance;
+  return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate, lastCompletedDate, appearance };
 }
 
 export function setPlanningTime(hhmm: string): void {
@@ -60,4 +71,8 @@ export function setLastCarryPromptDate(dayKey: string): void {
 
 export function setLastCompletedDate(dayKey: string): void {
   setRaw('lastCompletedDate', dayKey);
+}
+
+export function setAppearance(appearance: Appearance): void {
+  setRaw('appearance', appearance);
 }

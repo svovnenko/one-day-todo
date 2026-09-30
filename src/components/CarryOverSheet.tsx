@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Task } from '@/db/tasksRepo';
+import { useTheme } from '@/hooks/useTheme';
 import { buildCarryOverCandidates, CarryOverCandidate } from '@/logic/carryOver';
 import { freeSlots } from '@/logic/limits';
-import { colors, layout } from '@/theme';
+import { type Colors, layout } from '@/theme';
 
 type Props = {
   visible: boolean;
@@ -33,6 +34,8 @@ const SHEET_OFFSCREEN_OFFSET = 320;
  * presentation for iOS to get stuck mid-transition.
  */
 export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   // Lazy useState instead of useRef: only ever mutated through its own
   // methods (setValue/timing), never reassigned, so it's a one-time
@@ -162,53 +165,55 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  sheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 20,
-    paddingHorizontal: layout.screenPadding,
-    maxHeight: '70%',
-  },
-  title: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: 4 },
-  subtitle: { fontSize: 13, color: colors.muted, marginBottom: 12 },
-  list: { flexGrow: 0 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: layout.rowHeight,
-    paddingVertical: 6,
-    gap: 12,
-  },
-  // Spec v8: wraps onto as many lines as needed instead of truncating --
-  // minHeight (38) plus this paddingVertical keeps a single-line row the
-  // same height as before; longer text just grows the row.
-  rowText: { flex: 1, fontSize: 17, lineHeight: 22 },
-  rowTextSelected: { color: colors.text },
-  rowTextUnselected: { color: colors.muted },
-  rowTextFaded: { color: colors.faint },
-  checkmark: { color: colors.text, fontSize: 17, fontWeight: '600' },
-  blockedNote: { fontSize: 13, color: colors.faint },
-  counter: { fontSize: 13, color: colors.faint },
-  moveButton: {
-    backgroundColor: colors.text,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  moveButtonDisabled: { backgroundColor: colors.faint },
-  moveButtonText: { color: colors.background, fontSize: 17, fontWeight: '600' },
-  skipButton: { alignItems: 'center', paddingVertical: 16 },
-  skipButtonText: { color: colors.muted, fontSize: 15 },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    backdrop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: 'flex-end',
+      backgroundColor: colors.backdrop,
+    },
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      paddingTop: 20,
+      paddingHorizontal: layout.screenPadding,
+      maxHeight: '70%',
+    },
+    title: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: 4 },
+    subtitle: { fontSize: 13, color: colors.muted, marginBottom: 12 },
+    list: { flexGrow: 0 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: layout.rowHeight,
+      paddingVertical: 6,
+      gap: 12,
+    },
+    // Spec v8: wraps onto as many lines as needed instead of truncating --
+    // minHeight (38) plus this paddingVertical keeps a single-line row the
+    // same height as before; longer text just grows the row.
+    rowText: { flex: 1, fontSize: 17, lineHeight: 22 },
+    rowTextSelected: { color: colors.text },
+    rowTextUnselected: { color: colors.muted },
+    rowTextFaded: { color: colors.faint },
+    checkmark: { color: colors.text, fontSize: 17, fontWeight: '600' },
+    blockedNote: { fontSize: 13, color: colors.faint },
+    counter: { fontSize: 13, color: colors.faint },
+    moveButton: {
+      backgroundColor: colors.text,
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginTop: 16,
+    },
+    moveButtonDisabled: { backgroundColor: colors.faint },
+    moveButtonText: { color: colors.background, fontSize: 17, fontWeight: '600' },
+    skipButton: { alignItems: 'center', paddingVertical: 16 },
+    skipButtonText: { color: colors.muted, fontSize: 15 },
+  });
+}

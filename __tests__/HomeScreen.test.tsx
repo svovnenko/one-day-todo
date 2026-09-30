@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import HomeScreen from '../app/index';
 import * as tasksRepo from '@/db/tasksRepo';
 import { useAppStore } from '@/store/useAppStore';
+import { darkColors } from '@/theme';
 import { getAllFakeTasks, resetFakeRepos } from './testUtils/fakeRepos';
 
 // Spec section 7's acceptance scenarios, exercised at the screen level
@@ -70,6 +71,17 @@ async function swipeComplete(screen: Screen, taskNumber: number) {
   const swipeable = screen.getByTestId(`task-swipeable-mock-task-${taskNumber}`);
   await fireEvent(swipeable, 'swipeableOpen');
 }
+
+it('choosing Dark in Appearance renders the screen with the dark background token (spec v8)', async () => {
+  const screen = await renderHome();
+
+  await act(async () => {
+    useAppStore.getState().updateAppearance('dark');
+  });
+
+  const root = screen.getByTestId('home-screen');
+  expect(root.props.style.backgroundColor).toBe(darkColors.background);
+});
 
 it('the remaining-characters counter appears only within 10 of the 60-char limit (spec v8)', async () => {
   const screen = await renderHome();

@@ -2,14 +2,15 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as Updates from 'expo-updates';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { useTheme } from '@/hooks/useTheme';
 import { configureNotificationHandler } from '@/logic/notifications';
 import { hideSplashOnce } from '@/logic/splash';
-import { colors, type } from '@/theme';
+import { type Colors, type } from '@/theme';
 
 // Runs once at import time, before any screen mounts.
 configureNotificationHandler();
@@ -34,6 +35,8 @@ let errorBoundaryHitCount = 0;
  * in place of the crashed screen, instead of a blank/frozen app.
  */
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const hasFailedBefore = errorBoundaryHitCount > 0;
 
   useEffect(() => {
@@ -58,6 +61,8 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 }
 
 export default function RootLayout() {
+  const { colors } = useTheme();
+
   // Safety net: never leave the app stuck on the splash screen, even if
   // HomeScreen's init() throws before ever setting isReady (it's also
   // wrapped in its own try/catch, but this is a second, independent
@@ -70,7 +75,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="auto" />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -85,14 +90,16 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  errorScreen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  errorMessage: { fontSize: type.empty, color: colors.muted },
-  errorButton: { fontSize: type.empty, fontWeight: '600', color: colors.text },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    errorScreen: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 16,
+    },
+    errorMessage: { fontSize: type.empty, color: colors.muted },
+    errorButton: { fontSize: type.empty, fontWeight: '600', color: colors.text },
+  });
+}

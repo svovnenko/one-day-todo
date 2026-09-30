@@ -1,10 +1,11 @@
 import * as Haptics from 'expo-haptics';
-import { memo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Animated, type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import type { Task } from '@/db/tasksRepo';
-import { colors, layout, type } from '@/theme';
+import { useTheme } from '@/hooks/useTheme';
+import { type Colors, layout, type } from '@/theme';
 
 type Props = {
   task: Task;
@@ -43,6 +44,8 @@ const COLLAPSE_DURATION_MS = 200;
  * the input bar or every other row's swipe/completion.
  */
 export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [isCompleting, setIsCompleting] = useState(false);
   // Only applied once the collapse animation actually starts (see
   // `isCollapsing`) -- until then the row sizes itself naturally (via
@@ -138,25 +141,27 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
   );
 });
 
-const styles = StyleSheet.create({
-  row: {
-    minHeight: layout.rowHeight,
-    justifyContent: 'center',
-    paddingHorizontal: layout.screenPadding,
-    paddingVertical: 6,
-    backgroundColor: colors.background,
-  },
-  // lineHeight 26 + the row's 6pt top/bottom padding adds up to exactly
-  // layout.rowHeight (38) for a single line, so a one-line row looks
-  // identical to before wrapping existed; extra lines just grow the row.
-  text: { fontSize: type.task, lineHeight: 26, color: colors.text },
-  textCompleting: { color: colors.faint, textDecorationLine: 'line-through' },
-  counter: { fontSize: type.counter, color: colors.faint },
-  actionBackground: {
-    flex: 1,
-    backgroundColor: colors.swipeBackground,
-    justifyContent: 'center',
-    paddingLeft: layout.screenPadding,
-  },
-  checkmark: { fontSize: 18, color: colors.muted },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    row: {
+      minHeight: layout.rowHeight,
+      justifyContent: 'center',
+      paddingHorizontal: layout.screenPadding,
+      paddingVertical: 6,
+      backgroundColor: colors.background,
+    },
+    // lineHeight 26 + the row's 6pt top/bottom padding adds up to exactly
+    // layout.rowHeight (38) for a single line, so a one-line row looks
+    // identical to before wrapping existed; extra lines just grow the row.
+    text: { fontSize: type.task, lineHeight: 26, color: colors.text },
+    textCompleting: { color: colors.faint, textDecorationLine: 'line-through' },
+    counter: { fontSize: type.counter, color: colors.faint },
+    actionBackground: {
+      flex: 1,
+      backgroundColor: colors.swipeBackground,
+      justifyContent: 'center',
+      paddingLeft: layout.screenPadding,
+    },
+    checkmark: { fontSize: 18, color: colors.muted },
+  });
+}

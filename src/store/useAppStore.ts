@@ -140,6 +140,8 @@ type AppState = {
   updateSchedule: (
     partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>
   ) => void;
+  /** Persists the Theme choice and applies it immediately (spec 3.6 v8) -- every component reads it back via useTheme(). */
+  updateAppearance: (appearance: settingsRepo.Settings['appearance']) => void;
 };
 
 /**
@@ -349,6 +351,11 @@ export const useAppStore = create<AppState>((set, get) => {
       get().runRollover(); // spec 3.6: recompute the mode immediately
       // Best-effort, same as init()'s call -- see the comment there.
       applyReminderSchedule(settings).catch((error) => logDevError('applyReminderSchedule (updateSchedule)', error));
+    },
+
+    updateAppearance: (appearance) => {
+      settingsRepo.setAppearance(appearance);
+      set({ settings: { ...get().settings, appearance } });
     },
   };
 });

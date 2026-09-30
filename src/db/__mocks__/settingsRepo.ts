@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reminderEnabled: true,
   lastCarryPromptDate: null,
   lastCompletedDate: null,
+  appearance: 'system',
 };
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -33,6 +34,10 @@ export function setLastCarryPromptDate(dayKey: string): void {
 
 export function setLastCompletedDate(dayKey: string): void {
   settings.lastCompletedDate = dayKey;
+}
+
+export function setAppearance(appearance: Settings['appearance']): void {
+  settings.appearance = appearance;
 }
 
 /** Test-only: resets settings to the defaults, optionally overridden. */

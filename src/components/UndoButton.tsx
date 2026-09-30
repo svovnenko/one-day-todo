@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 import Reanimated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
+import { useTheme } from '@/hooks/useTheme';
 import { UNDO_WINDOW_MS } from '@/store/useAppStore';
-import { colors } from '@/theme';
+import { type Colors } from '@/theme';
 
 export type UndoBatchInfo = {
   /** Bumped every time a task joins the batch -- how this component tells "a new swipe happened" apart from an unrelated re-render, without keying off any single task's id. */
@@ -44,6 +45,8 @@ const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
  * fade; non-null -> null fades the whole button out before unmounting.
  */
 export function UndoButton({ batch, onUndo }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mounted, setMounted] = useState(batch !== null);
   // Lazy useState instead of useRef: only ever mutated through its own
   // methods (setValue/timing), never reassigned, so it's a one-time
@@ -91,7 +94,7 @@ export function UndoButton({ batch, onUndo }: Props) {
             cx={SIZE / 2}
             cy={SIZE / 2}
             r={RADIUS}
-            stroke="#FFFFFF"
+            stroke={colors.pillRing}
             strokeWidth={STROKE_WIDTH}
             fill="none"
             strokeDasharray={CIRCUMFERENCE}
@@ -105,33 +108,35 @@ export function UndoButton({ batch, onUndo }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: BOTTOM_OFFSET,
-    alignItems: 'center',
-  },
-  button: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
-    backgroundColor: colors.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  // Rotated -90deg so the ring starts emptying from 12 o'clock (SVG's
-  // stroke otherwise starts at 3 o'clock) and proceeds clockwise.
-  ring: {
-    position: 'absolute',
-    transform: [{ rotate: '-90deg' }],
-  },
-  text: { color: colors.pillText, fontSize: 22, fontWeight: '600' },
-  count: { color: colors.pillText, fontSize: 13, opacity: 0.7 },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    wrap: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: BOTTOM_OFFSET,
+      alignItems: 'center',
+    },
+    button: {
+      width: SIZE,
+      height: SIZE,
+      borderRadius: SIZE / 2,
+      backgroundColor: colors.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: colors.shadowOpacity,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: colors.shadowOpacity > 0 ? 4 : 0,
+    },
+    // Rotated -90deg so the ring starts emptying from 12 o'clock (SVG's
+    // stroke otherwise starts at 3 o'clock) and proceeds clockwise.
+    ring: {
+      position: 'absolute',
+      transform: [{ rotate: '-90deg' }],
+    },
+    text: { color: colors.pillText, fontSize: 22, fontWeight: '600' },
+    count: { color: colors.pillText, fontSize: 13, opacity: 0.7 },
+  });
+}

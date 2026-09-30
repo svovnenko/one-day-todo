@@ -1,10 +1,19 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { useMemo } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useTheme } from '@/hooks/useTheme';
 import { ALLOWED_DAY_END_TIMES, formatHHMM, isValidPlanningTime, parseHHMM } from '@/logic/dates';
+import type { Appearance } from '@/logic/theme';
 import { useAppStore } from '@/store/useAppStore';
-import { colors, layout } from '@/theme';
+import { type Colors, layout } from '@/theme';
+
+const APPEARANCE_OPTIONS: { value: Appearance; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 /** Builds a Date carrying just a time-of-day, for the native time pickers. */
 function timeToDate(hhmm: string): Date {
@@ -18,8 +27,11 @@ function dateToTime(d: Date): string {
 }
 
 export default function SettingsScreen() {
+  const { scheme, colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const settings = useAppStore((s) => s.settings);
   const updateSchedule = useAppStore((s) => s.updateSchedule);
+  const updateAppearance = useAppStore((s) => s.updateAppearance);
 
   /**
    * Day-end (E) and planning time (P) ranges no longer overlap (E is
@@ -60,6 +72,7 @@ export default function SettingsScreen() {
               <DateTimePicker
                 mode="time"
                 display="compact"
+                themeVariant={scheme}
                 value={timeToDate(settings.planningTime)}
                 onChange={(_event, date) => {
                   if (date) commitPlanningTime(dateToTime(date));
@@ -99,60 +112,83 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+
+        <Text style={styles.sectionTitle}>Appearance</Text>
+        <View style={styles.group}>
+          <View style={styles.dayEndBlock}>
+            <Text style={styles.rowLabel}>Theme</Text>
+            <View style={styles.dayEndSegment}>
+              {APPEARANCE_OPTIONS.map(({ value, label }) => {
+                const selected = settings.appearance === value;
+                return (
+                  <Pressable
+                    key={value}
+                    style={[styles.dayEndOption, selected && styles.dayEndOptionSelected]}
+                    onPress={() => updateAppearance(value)}
+                  >
+                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  content: { paddingVertical: 24 },
-  sectionTitle: {
-    fontSize: 13,
-    color: colors.muted,
-    textTransform: 'uppercase',
-    paddingHorizontal: layout.screenPadding,
-    marginBottom: 8,
-    marginTop: 20,
-  },
-  group: { backgroundColor: colors.background },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingHorizontal: layout.screenPadding,
-  },
-  rowLabel: { fontSize: 17, color: colors.text },
-  rowValue: { fontSize: 17, color: colors.muted },
-  divider: { height: 1, backgroundColor: colors.border, marginLeft: layout.screenPadding },
-  caption: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
-  dayEndBlock: {
-    paddingHorizontal: layout.screenPadding,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 8,
-  },
-  dayEndSegment: {
-    flexDirection: 'row',
-    backgroundColor: colors.swipeBackground,
-    borderRadius: 8,
-    padding: 2,
-  },
-  dayEndOption: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  dayEndOptionSelected: {
-    backgroundColor: colors.background,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  dayEndOptionText: { fontSize: 13, color: colors.muted },
-  dayEndOptionTextSelected: { color: colors.text, fontWeight: '600' },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.background },
+    content: { paddingVertical: 24 },
+    sectionTitle: {
+      fontSize: 13,
+      color: colors.muted,
+      textTransform: 'uppercase',
+      paddingHorizontal: layout.screenPadding,
+      marginBottom: 8,
+      marginTop: 20,
+    },
+    group: { backgroundColor: colors.background },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: 44,
+      paddingHorizontal: layout.screenPadding,
+    },
+    rowLabel: { fontSize: 17, color: colors.text },
+    rowValue: { fontSize: 17, color: colors.muted },
+    divider: { height: 1, backgroundColor: colors.border, marginLeft: layout.screenPadding },
+    caption: { fontSize: 13, color: colors.muted, paddingHorizontal: layout.screenPadding, paddingBottom: 8 },
+    dayEndBlock: {
+      paddingHorizontal: layout.screenPadding,
+      paddingTop: 12,
+      paddingBottom: 8,
+      gap: 8,
+    },
+    dayEndSegment: {
+      flexDirection: 'row',
+      backgroundColor: colors.swipeBackground,
+      borderRadius: 8,
+      padding: 2,
+    },
+    dayEndOption: {
+      flex: 1,
+      paddingVertical: 7,
+      borderRadius: 6,
+      alignItems: 'center',
+    },
+    dayEndOptionSelected: {
+      backgroundColor: colors.surface,
+      shadowColor: '#000',
+      shadowOpacity: colors.shadowOpacity,
+      shadowRadius: 2,
+      shadowOffset: { width: 0, height: 1 },
+      elevation: colors.shadowOpacity > 0 ? 1 : 0,
+    },
+    dayEndOptionText: { fontSize: 13, color: colors.muted },
+    dayEndOptionTextSelected: { color: colors.text, fontWeight: '600' },
+  });
+}

@@ -7,14 +7,14 @@
     "platforms": ["ios", "android"],
     "icon": "./assets/images/icon.png",
     "scheme": "onedaytodo",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#FFFFFF",
     "ios": {
       "supportsTablet": false,
-      "userInterfaceStyle": "light"
+      "userInterfaceStyle": "automatic"
     },
     "android": {
-      "userInterfaceStyle": "light",
+      "userInterfaceStyle": "automatic",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -30,7 +30,10 @@
         {
           "backgroundColor": "#FFFFFF",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 76,
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
       "expo-sqlite",

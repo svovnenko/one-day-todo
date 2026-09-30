@@ -24,14 +24,17 @@ import { useCarrySheetReveal } from '@/hooks/useCarrySheetReveal';
 import { useDayClock } from '@/hooks/useDayClock';
 import { useFooterLines } from '@/hooks/useFooterLines';
 import { useInputSession } from '@/hooks/useInputSession';
+import { useTheme } from '@/hooks/useTheme';
 import { excludeCompleting, visibleTasks } from '@/logic/completion';
 import { formatHeaderDate, parseDayKey } from '@/logic/dates';
 import { logDevError } from '@/logic/devError';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
-import { colors, layout, type } from '@/theme';
+import { type Colors, layout, type } from '@/theme';
 
 export default function HomeScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const isReady = useAppStore((s) => s.isReady);
   const selectedView = useAppStore((s) => s.selectedView);
   const mode = useAppStore((s) => s.mode);
@@ -214,7 +217,7 @@ export default function HomeScreen() {
 
   const contentContainerStyle = useMemo(
     () => [styles.listContent, tasks.length === 0 && styles.emptyContainer],
-    [tasks.length]
+    [tasks.length, styles]
   );
 
   // Spec 3.4/4 v6: Today's empty state is "Done for today." once a batch
@@ -250,17 +253,17 @@ export default function HomeScreen() {
         )}
       </View>
     );
-  }, [footerLineList, openCarrySheet]);
+  }, [footerLineList, openCarrySheet, styles]);
 
   if (!isReady) {
-    return <SafeAreaView style={styles.screen} />;
+    return <SafeAreaView testID="home-screen" style={styles.screen} />;
   }
 
   const todayLabel = formatHeaderDate(parseDayKey(todayDay));
   const tomorrowLabel = formatHeaderDate(parseDayKey(tomorrowDay));
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView testID="home-screen" style={styles.screen} edges={['top', 'left', 'right', 'bottom']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Header
           todayLabel={todayLabel}
@@ -313,14 +316,16 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  flex: { flex: 1 },
-  listArea: { flex: 1 },
-  listContent: { paddingTop: layout.listTopGap, paddingBottom: layout.fabSize + 32 },
-  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { fontSize: type.empty, color: colors.muted },
-  footerBlock: { paddingHorizontal: layout.screenPadding, marginTop: 12, gap: 6 },
-  footerLineText: { fontSize: type.header, color: colors.muted },
-  footerLinePressed: { opacity: 0.5 },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.background },
+    flex: { flex: 1 },
+    listArea: { flex: 1 },
+    listContent: { paddingTop: layout.listTopGap, paddingBottom: layout.fabSize + 32 },
+    emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    empty: { fontSize: type.empty, color: colors.muted },
+    footerBlock: { paddingHorizontal: layout.screenPadding, marginTop: 12, gap: 6 },
+    footerLineText: { fontSize: type.header, color: colors.muted },
+    footerLinePressed: { opacity: 0.5 },
+  });
+}

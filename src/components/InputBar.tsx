@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useTheme } from '@/hooks/useTheme';
 import { MAX_TASK_LENGTH } from '@/logic/limits';
-import { colors, type } from '@/theme';
+import { type Colors, type } from '@/theme';
 
 /** Spec 3.2 v8: the remaining-characters counter only appears once this close to the limit. */
 const COUNTER_THRESHOLD = 10;
@@ -33,6 +34,8 @@ type Props = {
  * component.
  */
 export function InputBar({ onAdd, onClose }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [draft, setDraft] = useState('');
   // Mirrors `draft` without causing a re-render on its own; read by the
   // keyboardDidHide listener below so it always has the latest text
@@ -103,16 +106,18 @@ export function InputBar({ onAdd, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.background,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  input: { flex: 1, fontSize: type.input, color: colors.text, padding: 0 },
-  counter: { fontSize: type.counter, color: colors.muted, marginLeft: 8 },
-});
+function makeStyles(colors: Colors) {
+  return StyleSheet.create({
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+    },
+    input: { flex: 1, fontSize: type.input, color: colors.text, padding: 0 },
+    counter: { fontSize: type.counter, color: colors.muted, marginLeft: 8 },
+  });
+}
