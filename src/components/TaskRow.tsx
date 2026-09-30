@@ -99,6 +99,7 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
       <Animated.View style={{ opacity }}>
         <Swipeable
           ref={swipeableRef}
+          testID={`task-swipeable-${task.id}`}
           friction={2}
           leftThreshold={80}
           dragOffsetFromLeftEdge={5}
