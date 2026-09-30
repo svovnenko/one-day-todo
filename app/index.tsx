@@ -3,13 +3,11 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
-  LayoutAnimation,
   ListRenderItemInfo,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,15 +30,6 @@ import { logDevError } from '@/logic/devError';
 import { hideSplashOnce } from '@/logic/splash';
 import { useAppStore } from '@/store/useAppStore';
 import { colors, layout, type } from '@/theme';
-
-// Android needs this opted in explicitly; iOS supports LayoutAnimation by
-// default. Belt-and-suspenders alongside TaskRow's own height-collapse
-// animation: by the time a row actually leaves `tasks` below, its own
-// animation has already brought it to zero height/opacity, so this
-// mainly guards against any residual snap in whatever's left.
-if (Platform.OS === 'android') {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
 
 export default function HomeScreen() {
   const isReady = useAppStore((s) => s.isReady);
@@ -108,8 +97,17 @@ export default function HomeScreen() {
    * closed-over value) means that check is correct even though TaskRow
    * calls this from a closure chain rooted well before this specific
    * function instance existed (setTimeout -> Animated .start() ->
-   * .start()), so the LayoutAnimation below only arms when something is
-   * actually about to change.
+   * .start()).
+   *
+   * Deliberately does NOT call LayoutAnimation here (a bug fixed in spec
+   * v8): by this point the row has already shrunk itself to zero height
+   * via its own Animated.timing, so removing it from the array is a
+   * zero-pixel change on its own -- LayoutAnimation had nothing left to
+   * usefully animate, and applying a second, native-level automatic
+   * transition on top of a still-live per-row Animated one is exactly
+   * the kind of overlap that left a neighboring row clipped to half its
+   * height in the owner's screenshot (both systems fighting over the
+   * same view's height in the same commit).
    *
    * Wrapped in useCallback with an empty dependency array -- nothing it
    * reads (useAppStore.getState, markHidden) ever changes, so this
@@ -120,7 +118,6 @@ export default function HomeScreen() {
   const handleAnimationComplete = useCallback(
     (task: { id: string }) => {
       if (useAppStore.getState().completion[task.id] === undefined) return;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       markHidden(task.id);
     },
     [markHidden]
@@ -141,11 +138,14 @@ export default function HomeScreen() {
    * swipeable) would be fiddly and easy to get subtly wrong; forcing an
    * unmount+remount via the key resets all of it at once, guaranteed, the
    * same way a genuinely fresh task row already does.
+   *
+   * Deliberately does NOT call LayoutAnimation here either (see the
+   * comment on handleAnimationComplete above) -- the restored row simply
+   * reappears via the normal React/FlatList layout pass, rather than
+   * fighting the row it's replacing's own still-unwinding Animated
+   * collapse for control of the same native view.
    */
   const handleUndo = useCallback(() => {
-    if (useAppStore.getState().pendingBatch) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    }
     undoPending();
   }, [undoPending]);
 

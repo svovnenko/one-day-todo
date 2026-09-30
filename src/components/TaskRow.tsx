@@ -59,6 +59,14 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
   const swipeableRef = useRef<SwipeableMethods>(null);
 
   function handleLayout(event: LayoutChangeEvent) {
+    // Once collapsing, this view's own height is being explicitly driven
+    // by the `height` Animated.Value below -- onLayout keeps firing as
+    // that shrinks, and without this guard those self-inflicted,
+    // ever-smaller readings would overwrite the real measurement this
+    // ref exists to remember (harmless today, since the value is already
+    // consumed before collapsing starts, but a landmine for anything
+    // that reads it later).
+    if (isCollapsing) return;
     measuredHeightRef.current = event.nativeEvent.layout.height;
   }
 

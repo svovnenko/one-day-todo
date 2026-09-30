@@ -1,5 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Keyboard } from 'react-native';
+import { Keyboard, LayoutAnimation } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import HomeScreen from '../app/index';
@@ -92,6 +92,29 @@ it('completing a task shows Undo; pressing Undo restores it', async () => {
 
   expect(screen.queryByText('Undo')).toBeNull();
   expect(screen.getByText('Call bank')).toBeTruthy();
+});
+
+it('regression (spec v8 bug fix): swipe + immediate Undo next to another task never touches LayoutAnimation', async () => {
+  // Mixing a global, native-level LayoutAnimation transition with this
+  // row's own per-view Animated-driven height collapse -- both fighting
+  // over the same view's height in the same commit -- was the root
+  // cause of a neighboring row rendering clipped to half its height
+  // (owner's screenshot). Asserting LayoutAnimation is never touched at
+  // all guards against that pattern coming back, not just this one
+  // symptom of it.
+  const configureNext = jest.spyOn(LayoutAnimation, 'configureNext');
+  const screen = await renderHome();
+  await addTask(screen, 'Neighbor task');
+  await addTask(screen, 'Task to complete');
+
+  await swipeComplete(screen, 2);
+  await fireEvent.press(screen.getByLabelText('Undo'));
+  await act(() => jest.advanceTimersByTime(300));
+
+  expect(configureNext).not.toHaveBeenCalled();
+  expect(screen.getByText('Neighbor task')).toBeTruthy();
+  expect(screen.getByText('Task to complete')).toBeTruthy();
+  configureNext.mockRestore();
 });
 
 it('completing 3 tasks quickly, then Undo: all 3 are visible', async () => {
