@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import type { Task } from '@/db/tasksRepo';
 import { useTheme } from '@/hooks/useTheme';
@@ -18,6 +19,9 @@ type Props = {
 
 const SLIDE_DURATION_MS = 220;
 const SHEET_OFFSCREEN_OFFSET = 320;
+/** Spec 3.4 v8.1: the sheet scrolls only once its content would exceed this much of the screen. */
+const SHEET_HEIGHT_FRACTION = 0.85;
+const LIST_FADE_HEIGHT = 24;
 
 /**
  * Spec 3.4 / 4 v7: white bottom sheet, rounded top, a plain text list --
@@ -36,6 +40,12 @@ const SHEET_OFFSCREEN_OFFSET = 320;
 export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { height: windowHeight } = useWindowDimensions();
+  // Spec v8.1: a numeric point value, not a percentage string -- a
+  // percentage maxHeight can't resolve against this sheet's own parent
+  // (an Animated.View sized by ITS content, i.e. by this sheet), which is
+  // exactly what left the row list squeezed to almost nothing before.
+  const sheetMaxHeight = Math.round(windowHeight * SHEET_HEIGHT_FRACTION);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   // Lazy useState instead of useRef: only ever mutated through its own
   // methods (setValue/timing), never reassigned, so it's a one-time
@@ -45,6 +55,11 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   // be detected below, the same thing the old effect's `[visible]`
   // dependency array did.
   const [wasVisible, setWasVisible] = useState(visible);
+  // Compared below to decide whether the row list is actually scrolled
+  // (vs. just sized to fit) -- drives the scroll indicator's bottom fade.
+  const [listHeight, setListHeight] = useState(0);
+  const [listContentHeight, setListContentHeight] = useState(0);
+  const isListScrollable = listContentHeight > listHeight + 1;
 
   const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
   const free = freeSlots(tomorrowTasks.length);
@@ -114,41 +129,62 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
     <View style={styles.backdrop} pointerEvents="box-none">
       <Pressable style={StyleSheet.absoluteFill} onPress={onSkip} />
       <Animated.View style={{ transform: [{ translateY }] }}>
-        <SafeAreaView edges={['bottom']} style={styles.sheet}>
+        <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
           <Text style={styles.title}>Move unfinished to tomorrow?</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
-          <ScrollView style={styles.list} bounces={false}>
-            {candidates.map(({ task, blocked, deduplicates }) => {
-              const isSelected = !!checked[task.id];
-              const slotsFull = !blocked && !deduplicates && !isSelected && usedSlots >= free;
-              const disabled = blocked || slotsFull;
-              const textStyle = isSelected
-                ? styles.rowTextSelected
-                : disabled
-                  ? styles.rowTextFaded
-                  : styles.rowTextUnselected;
-              return (
-                <Pressable
-                  key={task.id}
-                  style={styles.row}
-                  onPress={() => toggle({ task, blocked, deduplicates })}
-                  disabled={disabled}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected, disabled }}
-                >
-                  <Text style={[styles.rowText, textStyle]}>
-                    {task.text}
-                    {task.carryCount >= 1 ? <Text style={styles.counter}>{'  ×' + task.carryCount}</Text> : null}
-                  </Text>
-                  {isSelected ? (
-                    <Text style={styles.checkmark}>✓</Text>
-                  ) : blocked ? (
-                    <Text style={styles.blockedNote}>can&rsquo;t move again</Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <View style={styles.listWrap}>
+            <ScrollView
+              style={styles.list}
+              bounces={false}
+              showsVerticalScrollIndicator
+              onLayout={(event) => setListHeight(event.nativeEvent.layout.height)}
+              onContentSizeChange={(_width, height) => setListContentHeight(height)}
+            >
+              {candidates.map(({ task, blocked, deduplicates }) => {
+                const isSelected = !!checked[task.id];
+                const slotsFull = !blocked && !deduplicates && !isSelected && usedSlots >= free;
+                const disabled = blocked || slotsFull;
+                const textStyle = isSelected
+                  ? styles.rowTextSelected
+                  : disabled
+                    ? styles.rowTextFaded
+                    : styles.rowTextUnselected;
+                return (
+                  <Pressable
+                    key={task.id}
+                    style={styles.row}
+                    onPress={() => toggle({ task, blocked, deduplicates })}
+                    disabled={disabled}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: isSelected, disabled }}
+                  >
+                    <Text style={[styles.rowText, textStyle]}>
+                      {task.text}
+                      {task.carryCount >= 1 ? <Text style={styles.counter}>{'  ×' + task.carryCount}</Text> : null}
+                    </Text>
+                    {isSelected ? (
+                      <Text style={styles.checkmark}>✓</Text>
+                    ) : blocked ? (
+                      <Text style={styles.blockedNote}>can&rsquo;t move again</Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            {isListScrollable ? (
+              <View style={styles.listFade} pointerEvents="none">
+                <Svg width="100%" height={LIST_FADE_HEIGHT}>
+                  <Defs>
+                    <LinearGradient id="carryOverListFade" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0" stopColor={colors.surface} stopOpacity={0} />
+                      <Stop offset="1" stopColor={colors.surface} stopOpacity={1} />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect x="0" y="0" width="100%" height={LIST_FADE_HEIGHT} fill="url(#carryOverListFade)" />
+                </Svg>
+              </View>
+            ) : null}
+          </View>
           <Pressable
             style={[styles.moveButton, moveDisabled && styles.moveButtonDisabled]}
             onPress={handleMove}
@@ -176,17 +212,29 @@ function makeStyles(colors: Colors) {
       justifyContent: 'flex-end',
       backgroundColor: colors.backdrop,
     },
+    // No maxHeight here any more -- it's computed in points from
+    // useWindowDimensions() and merged in at render time (see
+    // sheetMaxHeight above). A percentage string can't resolve against
+    // this sheet's own parent (an Animated.View sized BY this sheet's
+    // content), which is exactly what squeezed the row list down to
+    // almost nothing before (spec v8.1).
     sheet: {
       backgroundColor: colors.surface,
       borderTopLeftRadius: 16,
       borderTopRightRadius: 16,
       paddingTop: 20,
       paddingHorizontal: layout.screenPadding,
-      maxHeight: '70%',
     },
     title: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: 4 },
     subtitle: { fontSize: 13, color: colors.muted, marginBottom: 12 },
-    list: { flexGrow: 0 },
+    listWrap: { position: 'relative' },
+    // flexShrink: 1 (RN's default is 0) is what actually lets this list
+    // give up height to the sheet's maxHeight once the title/subtitle/
+    // buttons around it (all flexShrink: 0 by default) have claimed
+    // theirs -- without it the list would just overflow past the sheet's
+    // cap instead of becoming scrollable.
+    list: { flexGrow: 0, flexShrink: 1 },
+    listFade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
