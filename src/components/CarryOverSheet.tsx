@@ -190,7 +190,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
             onPress={handleMove}
             disabled={moveDisabled}
           >
-            <Text style={styles.moveButtonText}>{moveLabel}</Text>
+            <Text style={[styles.moveButtonText, moveDisabled && styles.moveButtonTextDisabled]}>{moveLabel}</Text>
           </Pressable>
           <Pressable style={styles.skipButton} onPress={onSkip}>
             <Text style={styles.skipButtonText}>Let them go</Text>
@@ -259,8 +259,12 @@ function makeStyles(colors: Colors) {
       alignItems: 'center',
       marginTop: 16,
     },
-    moveButtonDisabled: { backgroundColor: colors.faint },
+    // Spec v8.1: a dedicated token, not `faint` -- a dimmer version of the
+    // active black/white button still looked nearly enabled, especially
+    // in dark mode (a light grey pill with black text).
+    moveButtonDisabled: { backgroundColor: colors.disabledBackground },
     moveButtonText: { color: colors.background, fontSize: 17, fontWeight: '600' },
+    moveButtonTextDisabled: { color: colors.muted },
     skipButton: { alignItems: 'center', paddingVertical: 16 },
     skipButtonText: { color: colors.muted, fontSize: 15 },
   });

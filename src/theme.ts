@@ -17,6 +17,8 @@ export type Colors = {
   pillRing: string;
   /** Opacity for the FAB/Undo button's drop shadow -- 0 in dark mode (spec v8: "the FAB has no shadow"). */
   shadowOpacity: number;
+  /** Disabled `Move` button background (spec v8.1) -- distinct from `faint` so it reads as clearly inert in both themes rather than just a dimmer version of the active color. */
+  disabledBackground: string;
 };
 
 export const lightColors: Colors = {
@@ -32,6 +34,7 @@ export const lightColors: Colors = {
   pillText: '#FFFFFF',
   pillRing: '#FFFFFF',
   shadowOpacity: 0.15,
+  disabledBackground: '#E5E5EA',
 };
 
 /** Spec 4 v8: true-black dark palette. */
@@ -48,6 +51,7 @@ export const darkColors: Colors = {
   pillText: '#000000',
   pillRing: '#000000',
   shadowOpacity: 0,
+  disabledBackground: '#2C2C2E',
 };
 
 export const layout = {

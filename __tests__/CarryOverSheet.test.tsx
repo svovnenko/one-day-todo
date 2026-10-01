@@ -3,6 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CarryOverSheet } from '@/components/CarryOverSheet';
 import type { Task } from '@/db/tasksRepo';
+import { lightColors } from '@/theme';
 
 function makeTask(overrides: Partial<Task>): Task {
   return {
@@ -61,9 +62,15 @@ it('renders all 10 tasks (spec v8.1: the sheet must not silently drop rows)', as
   }
 });
 
-it('the Move button starts disabled with the bare label until a row is selected', async () => {
+it('the Move button starts disabled, with the bare label and a clearly inert style (spec v8.1)', async () => {
   const screen = await renderSheet([makeTask({ id: '1', text: 'Only task' })]);
 
-  const moveButton = screen.getByText('Move');
-  expect(moveButton).toBeTruthy();
+  const moveLabel = screen.getByText('Move');
+  expect(moveLabel).toBeTruthy();
+  // Spec v8.1: disabled uses a dedicated `disabledBackground`/`muted`
+  // pairing, not a dimmer version of the active color -- regression for
+  // dark mode's light-grey-pill-with-black-text looking nearly enabled.
+  expect(moveLabel.props.style).toEqual(
+    expect.arrayContaining([expect.objectContaining({ color: lightColors.muted })])
+  );
 });
