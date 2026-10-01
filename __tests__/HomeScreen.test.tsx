@@ -193,6 +193,13 @@ it('completing a task and letting the 2s Undo window pass: gone from the list an
 });
 
 it('a long task (already in the DB, past any new-input limit) wraps instead of being truncated (spec v8)', async () => {
+  // Pinned to a definite day-mode instant: this test seeds Today directly
+  // (bypassing selectedView) but reads back through the UI, which shows
+  // whichever view is currently selected -- without this, the real
+  // wall-clock time crossing into planning mode (after 20:00, the default
+  // P) would default selectedView to 'tomorrow', and the seeded Today
+  // task would never appear in the rendered list at all.
+  jest.setSystemTime(new Date(2026, 8, 30, 10, 0));
   const screen = await renderHome();
   const longText =
     'A very long task that would have been truncated with an ellipsis before spec v8 removed numberOfLines';
@@ -239,6 +246,13 @@ it('keyboard hide with a non-empty draft: saved, and the input bar closes', asyn
 });
 
 it('keyboard hide with a non-empty draft on an already-full list: the draft is discarded', async () => {
+  // Pinned to a definite day-mode instant: this test fills Today
+  // explicitly (not through selectedView) but the keyboard-close path
+  // checks whichever view is CURRENTLY selected -- without this, the real
+  // wall-clock time crossing into planning mode (after 20:00) would
+  // default selectedView to 'tomorrow' (still empty), letting the draft
+  // through instead of discarding it.
+  jest.setSystemTime(new Date(2026, 8, 30, 10, 0));
   const screen = await renderHome();
   await fireEvent.press(screen.getByLabelText('Add task'));
   const input = screen.getByPlaceholderText('New task');
