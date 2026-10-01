@@ -94,7 +94,13 @@ export default function SettingsScreen() {
                     style={[styles.dayEndOption, selected && styles.dayEndOptionSelected]}
                     onPress={() => updateSchedule({ dayEndTime: option })}
                   >
-                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>{option}</Text>
+                    <Text
+                      style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}
+                      numberOfLines={1}
+                      allowFontScaling={false}
+                    >
+                      {option}
+                    </Text>
                   </Pressable>
                 );
               })}
@@ -126,7 +132,13 @@ export default function SettingsScreen() {
                     style={[styles.dayEndOption, selected && styles.dayEndOptionSelected]}
                     onPress={() => updateAppearance(value)}
                   >
-                    <Text style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}>{label}</Text>
+                    <Text
+                      style={[styles.dayEndOptionText, selected && styles.dayEndOptionTextSelected]}
+                      numberOfLines={1}
+                      allowFontScaling={false}
+                    >
+                      {label}
+                    </Text>
                   </Pressable>
                 );
               })}
@@ -151,11 +163,17 @@ function makeStyles(colors: Colors) {
       marginTop: 20,
     },
     group: { backgroundColor: colors.background },
+    // Spec v8.1: minHeight alone let a row's control (the Switch, the
+    // compact time picker) sit flush against the divider below it once
+    // the control was taller than the text line centered inside --
+    // explicit vertical padding guarantees breathing room regardless of
+    // which control a row holds.
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       minHeight: 44,
+      paddingVertical: 10,
       paddingHorizontal: layout.screenPadding,
     },
     rowLabel: { fontSize: 17, color: colors.text },
@@ -173,10 +191,21 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.swipeBackground,
       borderRadius: 8,
       padding: 2,
+      // Spec v8.1: a hard clip at the track's own rounded edge, so a
+      // 5-option row (Day ends at) can never bleed past the segment --
+      // and past the screen edge -- at narrow widths (320pt, iPhone SE).
+      overflow: 'hidden',
     },
     dayEndOption: {
       flex: 1,
+      // minWidth: 0 overrides each option's implicit content-based floor
+      // -- without it, five equal flex:1 shares can still refuse to
+      // shrink smaller than their own text's natural width, which is
+      // exactly what pushed the 5th option (04:00) past the segment's
+      // right edge.
+      minWidth: 0,
       paddingVertical: 7,
+      paddingHorizontal: 2,
       borderRadius: 6,
       alignItems: 'center',
     },
@@ -188,7 +217,7 @@ function makeStyles(colors: Colors) {
       shadowOffset: { width: 0, height: 1 },
       elevation: colors.shadowOpacity > 0 ? 1 : 0,
     },
-    dayEndOptionText: { fontSize: 13, color: colors.muted },
+    dayEndOptionText: { fontSize: 13, color: colors.muted, textAlign: 'center' },
     dayEndOptionTextSelected: { color: colors.text, fontWeight: '600' },
   });
 }
