@@ -5,17 +5,9 @@ export const MAX_CARRY_COUNT = 5;
 export const MAX_TASK_LENGTH = 60;
 
 /**
- * True once a list (Today or Tomorrow) has reached the open-task limit.
- *
- * `openTaskCount` should be exactly what the store's
- * todayTasks.length/tomorrowTasks.length already are: every task
- * currently in that logical day's SQLite rows. That count already
- * includes any task in the pending Undo batch -- batch tasks are never
- * deleted from SQLite (and so never leave listByDay()'s results) until
- * the batch actually commits -- so passing it straight through correctly
- * counts pending-batch tasks against the limit, with no separate
- * bookkeeping needed. A slot frees itself the moment commitPendingBatch()
- * deletes them for real and refreshTasks() re-reads the shorter list.
+ * True once a list has reached the open-task limit. Pending-batch tasks
+ * count toward it -- they're never deleted from SQLite until the batch
+ * commits, so they never leave listByDay()'s results either.
  */
 export function isListFull(openTaskCount: number): boolean {
   return openTaskCount >= OPEN_TASK_LIMIT;

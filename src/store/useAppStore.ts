@@ -19,17 +19,7 @@ export type Mode = 'day' | 'planning';
 /** Exported so the Undo button's ring animation can't disagree with the store's actual timeout (spec 3.2). */
 export const UNDO_WINDOW_MS = 2000;
 
-/**
- * The tasks the user has swiped since the last commit/undo (spec 3.2:
- * batch undo), as exposed to the UI. They stay in SQLite untouched until
- * the batch commits, so killing the app mid-window loses nothing (spec
- * section 5) -- only the UI hides them and shows the Undo button. Every
- * new swipe appends to `tasks` and restarts the countdown (owned by the
- * CompletionBatch below) -- it does NOT commit the earlier ones.
- * `version` increments on every append, purely so the UI (the Undo
- * button's ring) can tell "a new task joined" apart from "an unrelated
- * re-render" without keying off any single task's id.
- */
+/** Spec 3.2 batch undo -- tasks stay in SQLite until commit (safe if killed mid-window). `version` bumps per swipe. */
 type PendingBatch = {
   tasks: tasksRepo.Task[];
   version: number;
@@ -38,105 +28,47 @@ type PendingBatch = {
 type AppState = {
   isReady: boolean;
   settings: settingsRepo.Settings;
-  /** Logical-date keys ('YYYY-MM-DD') for the two lists currently shown. */
   todayDay: string;
   tomorrowDay: string;
-  /** Tomorrow is locked (and hidden/unwritable) in day mode -- spec 3.1. Independent of selectedView, which the user can override manually only in planning mode. */
+  /** Tomorrow is locked in day mode (spec 3.1). */
   mode: Mode;
   todayTasks: tasksRepo.Task[];
   tomorrowTasks: tasksRepo.Task[];
   selectedView: View;
   pendingBatch: PendingBatch | null;
-  /**
-   * Per-task row state while it's in the pending batch: 'pending' means
-   * still animating out (or never removed from the data yet); 'hidden'
-   * means the row's own animation has finished. A task with no entry here
-   * is unaffected by any batch. Owns everything the screen used to track
-   * itself as `hiddenRowIds`.
-   */
+  /** Per-task state while in the pending batch: 'pending' is still animating, 'hidden' once the row's animation finished. */
   completion: Record<string, CompletionState>;
-  /**
-   * Bumped per task by Undo, so a restored row's component remounts
-   * fresh instead of trying to reverse a part-finished animation in
-   * place. Replaces the screen's own `restoreCounts`.
-   */
+  /** Bumped per task by Undo, so a restored row remounts fresh instead of reversing a part-finished animation in place. */
   restoreVersion: Record<string, number>;
-  /** Whether the "Move unfinished to tomorrow?" bottom sheet is showing (spec 3.4). */
   carrySheetVisible: boolean;
-  /**
-   * True when evaluateCarryPrompt's conditions are met but the sheet
-   * hasn't been revealed yet. Kept separate from carrySheetVisible so the
-   * store never presents the sheet itself -- the main screen decides WHEN
-   * to reveal it (only while focused and the app is active): presenting
-   * it while a native screen transition or AppState transition is in
-   * flight could otherwise leave an invisible layer swallowing every
-   * touch on iOS.
-   */
+  /** True until revealed -- the screen decides WHEN (focused + active), since a mid-transition sheet can swallow touches on iOS. */
   carryPromptDue: boolean;
 
-  /** Opens the DB, loads settings + today/tomorrow's tasks, and picks the default view. */
   init: () => void;
-  /** Re-reads today/tomorrow's tasks from SQLite into state. */
   refreshTasks: () => void;
-  /**
-   * In day mode, a 'tomorrow' target is redirected to today -- Tomorrow
-   * doesn't exist yet (spec 3.1). Returns false (and adds nothing) if the
-   * target list is already at OPEN_TASK_LIMIT (spec 3.2 v5) -- the caller
-   * is expected to have already checked this in the common case, but the
-   * store enforces it too as a safety net.
-   */
+  /** In day mode, 'tomorrow' redirects to today (spec 3.1). Returns false if the target list is already full (spec 3.2 v5) -- a safety net; the caller should have already checked. */
   addTask: (view: View, text: string) => boolean;
-  /**
-   * Adds a task to the pending batch and restarts its UNDO_WINDOW_MS
-   * timer -- it does NOT commit whatever was already pending (spec 3.2:
-   * batch undo). Called at the swipe threshold, not after the row's own
-   * strike-through/fade/collapse animation finishes, so the Undo button
-   * appears immediately.
-   */
+  /** Adds to the pending batch and restarts its UNDO_WINDOW_MS timer (spec 3.2) -- doesn't commit what was already pending. Called at the swipe threshold so Undo appears immediately. */
   beginComplete: (task: tasksRepo.Task) => void;
-  /**
-   * The row's own completion animation (strike-through, fade, collapse)
-   * has finished -- marks it 'hidden' so `visibleTasks` drops it from the
-   * list. A no-op if the task isn't in the batch any more (Undo already
-   * restored it, or the batch already committed some other way).
-   */
+  /** The row's completion animation finished -- marks it 'hidden' so visibleTasks drops it. No-op if Undo already restored it. */
   markHidden: (taskId: string) => void;
-  /** Restores every task in the batch (they were never deleted) and clears it. */
   undoPending: () => void;
-  /** Permanently deletes every task in the batch, in one transaction (timeout, rollover, or backgrounding). */
   commitPendingBatch: () => void;
   /** Ignored for 'tomorrow' while in day mode -- Tomorrow can't be selected before planning time (spec 3.1). */
   setSelectedView: (view: View) => void;
-  /**
-   * Day-end rollover (spec 3.5): commits the pending batch first, deletes
-   * every task whose day is before today, recomputes today/tomorrow's day
-   * keys, and resets the view to the mode default. Runs on launch, on
-   * AppState becoming active, and on the in-foreground timer to the next E.
-   */
+  /** Day-end rollover (spec 3.5): commits the batch, purges tasks before today, recomputes day keys, resets the view. */
   runRollover: () => void;
-  /**
-   * Lighter than runRollover: just recomputes the mode/default view,
-   * without purging. Runs on the in-foreground timer to the next planning
-   * time P.
-   */
+  /** Lighter than runRollover: recomputes mode/default view without purging. */
   refreshMode: () => void;
-  /** Sets carryPromptDue if the spec 3.4 conditions are currently met. Called after runRollover/refreshMode; doesn't show the sheet itself. */
+  /** Sets carryPromptDue if the spec 3.4 conditions are met; doesn't show the sheet itself. */
   evaluateCarryPrompt: () => void;
-  /** Consumes a due prompt and actually reveals the sheet. Called only by the main screen, gated on focus + AppState active. */
   showCarrySheetIfDue: () => void;
-  /** Unconditionally hides the sheet. Safe to call any time, including as a guaranteed-hide fallback after a failed Skip/Move. */
   hideCarrySheet: () => void;
   /** Fallback link (spec 3.4): reopens the sheet even if already shown today. */
   openCarrySheet: () => void;
-  /** "Skip": marks the prompt as shown for today and closes the sheet. */
   skipCarrySheet: () => void;
-  /** "Move": moves the checked tasks to tomorrow, marks the prompt shown, and closes the sheet. */
   moveCarryOverTasks: (taskIds: string[]) => void;
-  /**
-   * Persists any of planningTime/dayEndTime/reminderEnabled that are
-   * given, immediately recomputes the mode/day keys, and reschedules (or
-   * cancels) the daily reminder notification (spec 3.6).
-   */
+  /** Persists any given schedule fields, recomputes mode/day keys, and reschedules the reminder (spec 3.6). */
   updateSchedule: (
     partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>
   ) => void;
@@ -144,28 +76,16 @@ type AppState = {
   updateAppearance: (appearance: settingsRepo.Settings['appearance']) => void;
 };
 
-/**
- * Trims, collapses to a single line, and caps length per spec 3.2 v8
- * (1-MAX_TASK_LENGTH chars). Applies to new input only -- an existing
- * task already longer than that (from before this limit existed) is
- * never retroactively truncated, since this only ever runs on text a
- * user is currently typing in.
- */
+/** Trims, collapses to one line, and caps at MAX_TASK_LENGTH (spec 3.2 v8). Only new input is capped -- an existing longer task is never retroactively truncated. */
 function sanitizeTaskText(raw: string): string {
   return raw.replace(/\r?\n/g, ' ').trim().slice(0, MAX_TASK_LENGTH);
 }
 
 export const useAppStore = create<AppState>((set, get) => {
-  // Owns the batch's timer lifecycle (add/restart/commit/cancel) AND the
-  // per-task completion/restoreVersion state; see
-  // src/logic/completionBatch.ts. onCommit does the actual SQLite deletes
-  // (in one transaction) and syncs the store once the batch resolves,
-  // whether via timeout, rollover, or backgrounding.
+  // Owns the batch's timer + per-task state (src/logic/completionBatch.ts); onCommit deletes from SQLite and syncs the store.
   const completionBatch = new CompletionBatch<tasksRepo.Task>(UNDO_WINDOW_MS, (tasks) => {
     tasksRepo.removeMany(tasks.map((t) => t.id));
-    // Spec 3.4/4: "Done for today." only follows an actual commit (not
-    // Undo, which cancels the batch before it gets here) of a batch that
-    // included at least one today task (not a tomorrow-only batch).
+    // Spec 3.4/4: "Done for today." follows only an actual commit of a batch with at least one today task.
     const { todayDay, settings } = get();
     if (batchCompletesToday(tasks, todayDay)) {
       settingsRepo.setLastCompletedDate(todayDay);
@@ -198,10 +118,8 @@ export const useAppStore = create<AppState>((set, get) => {
     init: () => {
       let settings = settingsRepo.getSettings();
 
-      // Spec 3.1/3.6 v4: E and P now have restricted ranges (E is a whole
-      // hour 00:00-04:00, P is 12:00-23:59). A stored value outside those
-      // ranges (e.g. a leftover test value) is reset to the default and
-      // saved back, so the header dates stay meaningful.
+      // Spec 3.1/3.6 v4: E/P have restricted ranges; an out-of-range
+      // stored value (e.g. a leftover test value) resets to default.
       if (!isValidDayEnd(settings.dayEndTime)) {
         settingsRepo.setDayEndTime(settingsRepo.DEFAULT_SETTINGS.dayEndTime);
         settings = { ...settings, dayEndTime: settingsRepo.DEFAULT_SETTINGS.dayEndTime };
@@ -214,19 +132,12 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ settings });
       get().runRollover();
       set({ isReady: true });
-      // Reschedules under the (possibly corrected) settings. Best-effort:
-      // no reminder just means the user doesn't get a "Plan tomorrow"
-      // notification, not a broken app.
+      // Best-effort: no reminder just means no "Plan tomorrow" notification, not a broken app.
       applyReminderSchedule(settings).catch((error) => logDevError('applyReminderSchedule (init)', error));
     },
 
     refreshTasks: () => {
-      // Reuses each task's previous object reference where its visible
-      // data hasn't changed -- listByDay() always builds fresh objects
-      // from SQLite rows, and handing those straight to
-      // React.memo(TaskRow) would defeat it (a "new" reference is a
-      // "changed" prop by React's default shallow comparison, even with
-      // identical contents).
+      // Reuses unchanged task references so a rebuilt-but-identical object doesn't defeat React.memo(TaskRow).
       const { todayDay, tomorrowDay, todayTasks, tomorrowTasks } = get();
       set({
         todayTasks: reconcileTaskList(todayTasks, tasksRepo.listByDay(todayDay)),

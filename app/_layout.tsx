@@ -15,25 +15,16 @@ import { type Colors, type } from '@/theme';
 // Runs once at import time, before any screen mounts.
 configureNotificationHandler();
 
-// Keeps the native splash up past its own auto-hide (which would
-// otherwise happen as soon as the first frame draws) until HomeScreen's
-// isReady effect calls hideSplashOnce() -- so the splash goes straight to
-// the real list instead of to a blank white frame while the store is
-// still loading. Must be called before anything else renders.
+// Keeps the native splash up past its auto-hide until HomeScreen's
+// isReady effect calls hideSplashOnce(), so it goes straight to the real
+// list instead of a blank frame while the store loads.
 SplashScreen.preventAutoHideAsync().catch(() => {}); // best-effort, never user-visible
 
-// Bumped each time this boundary actually catches an error, so a SECOND
-// failure in the same session (most likely: Reload didn't fix it) offers
-// "Restart app" too. Module-level rather than component state, since a
-// caught error unmounts and remounts a fresh ErrorBoundary instance --
-// this only resets on an actual JS reload, which is exactly the point.
+// Bumped on each catch so a SECOND failure offers "Restart app" too.
+// Module-level, not component state -- a caught error remounts a fresh ErrorBoundary.
 let errorBoundaryHitCount = 0;
 
-/**
- * Expo Router's own convention: exporting `ErrorBoundary` from a layout
- * file wraps its route tree in a React error boundary that renders this
- * in place of the crashed screen, instead of a blank/frozen app.
- */
+/** Expo Router convention: exporting `ErrorBoundary` wraps the route tree in a React error boundary. */
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -63,10 +54,8 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 export default function RootLayout() {
   const { colors } = useTheme();
 
-  // Safety net: never leave the app stuck on the splash screen, even if
-  // HomeScreen's init() throws before ever setting isReady (it's also
-  // wrapped in its own try/catch, but this is a second, independent
-  // guarantee).
+  // Safety net: never leave the app stuck on the splash if init() throws
+  // before setting isReady (also guarded by its own try/catch).
   useEffect(() => {
     const timer = setTimeout(hideSplashOnce, 3000);
     return () => clearTimeout(timer);

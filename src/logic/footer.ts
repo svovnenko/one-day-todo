@@ -16,14 +16,11 @@ const FULL_LINE = 'Full — finish a task to add more';
 const MOVE_LINE = 'Move unfinished to tomorrow ›';
 
 /**
- * Up to two lines at the end of the task list (spec 3.2/3.4 v7), in order:
- * 1. "Full -- finish a task to add more" when the VIEWED list is full,
- *    regardless of view or mode.
- * 2. The carry-over line -- only in the Today view, only in planning mode,
- *    and only when Today has at least one movable task:
- *    - Tomorrow has room: the tappable "Move unfinished to tomorrow ›" link.
- *    - Tomorrow is full and line 1 is also showing: "Tomorrow is full too".
- *    - Tomorrow is full and line 1 isn't showing: "Tomorrow is full".
+ * Up to two lines at the end of the list (spec 3.2/3.4 v7), in order:
+ * 1. "Full -- finish a task to add more" when the VIEWED list is full.
+ * 2. The carry-over line -- only in Today/planning mode with a movable
+ *    task: the tappable move link if Tomorrow has room, else "Tomorrow
+ *    is full" (or "...full too" if line 1 is also showing).
  */
 export function footerLines(args: {
   view: View;

@@ -24,39 +24,27 @@ const SHEET_HEIGHT_FRACTION = 0.85;
 const LIST_FADE_HEIGHT = 24;
 
 /**
- * Spec 3.4 / 4 v7: white bottom sheet, rounded top, a plain text list --
- * no checkboxes or circles. Tapping a row selects it (black text, black
- * checkmark); a full-width black `Move N` and a grey `Let them go`.
+ * Spec 3.4/4 v7: bottom sheet, rounded top, plain text rows (no
+ * checkboxes); full-width `Move N` + grey `Let them go`.
  *
- * Deliberately NOT a React Native <Modal>: presenting a native Modal
- * while another native transition is in flight -- the
- * Settings screen (a native-stack `presentation: 'modal'`) dismissing, or
- * an AppState change around a notification tap -- could leave an
- * invisible modal layer on iOS that swallows every touch and freezes the
- * app. This is a plain absolutely positioned View instead, rendered last
- * in app/index.tsx so it stacks visually on top; there is no native
- * presentation for iOS to get stuck mid-transition.
+ * Not a React Native <Modal> -- presenting one while another native
+ * transition is in flight (Settings dismissing, an AppState change)
+ * could leave an invisible layer swallowing touches on iOS. This is a
+ * plain absolutely positioned View, rendered last so it stacks on top.
  */
 export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { height: windowHeight } = useWindowDimensions();
-  // Spec v8.1: a numeric point value, not a percentage string -- a
-  // percentage maxHeight can't resolve against this sheet's own parent
-  // (an Animated.View sized by ITS content, i.e. by this sheet), which is
-  // exactly what left the row list squeezed to almost nothing before.
+  // Spec v8.1: points, not a percentage -- a percentage can't resolve
+  // against this sheet's own parent (an Animated.View sized BY this sheet).
   const sheetMaxHeight = Math.round(windowHeight * SHEET_HEIGHT_FRACTION);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  // Lazy useState instead of useRef: only ever mutated through its own
-  // methods (setValue/timing), never reassigned, so it's a one-time
-  // value rather than a mutable ref cell -- safe to read during render.
+  // One-time value (only ever mutated via setValue/timing) -- safe to read during render, unlike a ref.
   const [translateY] = useState(() => new Animated.Value(SHEET_OFFSCREEN_OFFSET));
-  // Tracks the previous `visible` so the hidden -> visible transition can
-  // be detected below, the same thing the old effect's `[visible]`
-  // dependency array did.
+  // Tracks the previous `visible` to detect the hidden -> visible transition below.
   const [wasVisible, setWasVisible] = useState(visible);
-  // Compared below to decide whether the row list is actually scrolled
-  // (vs. just sized to fit) -- drives the scroll indicator's bottom fade.
+  // Drives the scroll indicator's bottom fade below.
   const [listHeight, setListHeight] = useState(0);
   const [listContentHeight, setListContentHeight] = useState(0);
   const isListScrollable = listContentHeight > listHeight + 1;
@@ -64,25 +52,16 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
   const free = freeSlots(tomorrowTasks.length);
 
-  // Resets the selection to all-unselected the moment the sheet becomes
-  // visible -- adjusted directly during render (rather than in an
-  // effect) so the very first frame the sheet paints already shows the
-  // reset selection, with no stale-then-corrected flash. Spec 3.4 v6:
-  // moving a task to tomorrow must be a conscious choice, so nothing
-  // starts pre-selected -- not even a carryCount-based nudge.
-  //
-  // Deliberately keyed only on `visible`, not on `tasks`/`tomorrowTasks`
-  // -- app/index.tsx rebuilds those arrays on every render, and
-  // re-initializing on every one of those would snap a row the user just
-  // selected back while the sheet is still open.
+  // Resets to all-unselected the moment the sheet becomes visible --
+  // during render, not an effect, so there's no stale-then-corrected
+  // flash (spec 3.4 v6: moving a task must be a conscious choice).
   if (visible !== wasVisible) {
     setWasVisible(visible);
     if (visible) setChecked({});
   }
 
-  // The slide-in animation is a real side effect (an imperative
-  // Animated.timing kickoff), so it stays in an effect rather than
-  // joining the render-time adjustment above.
+  // A real side effect (imperative Animated.timing kickoff), so it stays
+  // in an effect rather than the render-time adjustment above.
   useEffect(() => {
     if (visible) {
       translateY.setValue(SHEET_OFFSCREEN_OFFSET);
@@ -96,9 +75,8 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
 
   if (!visible) return null;
 
-  // How many of tomorrow's free slots the current selection would consume
-  // -- a deduplicating task merges into an existing tomorrow task instead
-  // of taking a new slot, so it's excluded (spec 3.4 v5).
+  // How many of tomorrow's free slots the selection would consume -- a
+  // deduplicating task merges instead of taking a new slot (spec 3.4 v5).
   const usedSlots = candidates.filter((c) => checked[c.task.id] && !c.blocked && !c.deduplicates).length;
 
   function toggle(candidate: CarryOverCandidate) {
@@ -212,12 +190,7 @@ function makeStyles(colors: Colors) {
       justifyContent: 'flex-end',
       backgroundColor: colors.backdrop,
     },
-    // No maxHeight here any more -- it's computed in points from
-    // useWindowDimensions() and merged in at render time (see
-    // sheetMaxHeight above). A percentage string can't resolve against
-    // this sheet's own parent (an Animated.View sized BY this sheet's
-    // content), which is exactly what squeezed the row list down to
-    // almost nothing before (spec v8.1).
+    // maxHeight is applied at render time -- see sheetMaxHeight above.
     sheet: {
       backgroundColor: colors.surface,
       borderTopLeftRadius: 16,
@@ -228,11 +201,8 @@ function makeStyles(colors: Colors) {
     title: { fontSize: 17, fontWeight: '600', color: colors.text, marginBottom: 4 },
     subtitle: { fontSize: 13, color: colors.muted, marginBottom: 12 },
     listWrap: { position: 'relative' },
-    // flexShrink: 1 (RN's default is 0) is what actually lets this list
-    // give up height to the sheet's maxHeight once the title/subtitle/
-    // buttons around it (all flexShrink: 0 by default) have claimed
-    // theirs -- without it the list would just overflow past the sheet's
-    // cap instead of becoming scrollable.
+    // flexShrink: 1 (RN's default is 0) is what lets this list give up
+    // height to the sheet's cap once the fixed-size rows around it have claimed theirs.
     list: { flexGrow: 0, flexShrink: 1 },
     listFade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
     row: {
@@ -242,9 +212,8 @@ function makeStyles(colors: Colors) {
       paddingVertical: 6,
       gap: 12,
     },
-    // Spec v8: wraps onto as many lines as needed instead of truncating --
-    // minHeight (38) plus this paddingVertical keeps a single-line row the
-    // same height as before; longer text just grows the row.
+    // Wraps instead of truncating (spec v8) -- minHeight (38) + this
+    // paddingVertical keeps a single-line row the same height as before.
     rowText: { flex: 1, fontSize: 17, lineHeight: 22 },
     rowTextSelected: { color: colors.text },
     rowTextUnselected: { color: colors.muted },
@@ -259,9 +228,8 @@ function makeStyles(colors: Colors) {
       alignItems: 'center',
       marginTop: 16,
     },
-    // Spec v8.1: a dedicated token, not `faint` -- a dimmer version of the
-    // active black/white button still looked nearly enabled, especially
-    // in dark mode (a light grey pill with black text).
+    // Spec v8.1: a dedicated token, not `faint` -- a dimmer version of
+    // the active color looked nearly enabled, especially in dark mode.
     moveButtonDisabled: { backgroundColor: colors.disabledBackground },
     moveButtonText: { color: colors.background, fontSize: 17, fontWeight: '600' },
     moveButtonTextDisabled: { color: colors.muted },

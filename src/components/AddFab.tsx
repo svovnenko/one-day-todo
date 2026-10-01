@@ -16,22 +16,17 @@ const SHAKE_STEPS = [8, -8, 6, -6, 0];
 const SHAKE_STEP_DURATION_MS = 60; // 5 steps * 60ms = ~300ms total, per spec 3.2 v7
 
 /**
- * Spec 3.3 / 4: 56pt circle, bottom-left, soft shadow (none in dark mode --
- * spec v8), "+" 24pt.
+ * Spec 3.3/4: 56pt circle, bottom-left, soft shadow (none in dark mode
+ * -- spec v8), "+" 24pt.
  *
- * Spec 3.2 v7: tapping while full no longer opens a popup/toast -- instead
- * a warning haptic plus a short horizontal shake, and nothing else. The
- * "list is full" footer line (src/logic/footer.ts) is what actually tells
- * the user why, rendered by the list itself so it can never overlap
- * anything.
+ * Spec 3.2 v7: tapping while full is a warning haptic + short shake,
+ * nothing else -- the "list is full" footer line (src/logic/footer.ts)
+ * tells the user why.
  */
 export function AddFab({ onPress, isFull = false }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  // Lazy useState instead of useRef: this Animated.Value is only ever
-  // mutated through its own methods (setValue/timing), never reassigned,
-  // so it's a one-time-computed value rather than a mutable ref cell --
-  // and unlike a ref, reading it back out during render is safe.
+  // One-time value (only ever mutated via setValue/timing) -- safe to read during render, unlike a ref.
   const [translateX] = useState(() => new Animated.Value(0));
 
   function handlePress() {

@@ -17,11 +17,9 @@ export type RolloverPlan = {
 };
 
 /**
- * Pure day/mode math for a rollover: given the moment and the schedule
- * settings, what today/tomorrow should be and which view is the default.
- * The actual DB purge and pending-undo commit are side effects performed
- * by the caller (see useAppStore's runRollover) -- this stays pure so it's
- * unit-testable per spec section 6's rule.
+ * Pure day/mode math for a rollover -- the DB purge and pending-undo
+ * commit are side effects the caller performs (useAppStore's
+ * runRollover). Kept pure so it's unit-testable (spec section 6).
  */
 export function planRollover(now: Date, settings: RolloverSettings): RolloverPlan {
   const todayDay = todayKey(now, settings.dayEndTime);

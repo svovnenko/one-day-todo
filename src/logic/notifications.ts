@@ -14,12 +14,7 @@ export function configureNotificationHandler(): void {
   });
 }
 
-/**
- * Requests notification permission if it hasn't been decided yet. iOS only
- * shows its system prompt once ever, so calling this repeatedly (e.g. every
- * time schedule settings change) is safe -- it's a no-op after the first
- * real ask. Returns whether the app is currently allowed to notify.
- */
+/** Requests notification permission if undecided. iOS shows its system prompt once ever, so repeated calls are safe (a no-op after the first ask). */
 export async function requestPermission(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
@@ -43,12 +38,9 @@ export async function scheduleDailyReminder(planningTime: string): Promise<void>
 }
 
 /**
- * Applies the current reminder setting: cancels everything if the
- * reminder is off, otherwise (re)requests permission and (re)schedules the
- * daily reminder at the current planning time. Call this at launch and
- * whenever schedule settings change (spec 3.6). If permission is denied,
- * this silently does nothing further -- the app works normally with no
- * reminder (spec 3.7).
+ * Applies the reminder setting: cancels everything if off, otherwise
+ * (re)requests permission and (re)schedules at the current planning
+ * time (spec 3.6). Does nothing further if permission is denied.
  */
 export async function applyReminderSchedule(settings: {
   reminderEnabled: boolean;

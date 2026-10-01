@@ -53,9 +53,8 @@ function makeStyles(colors: Colors) {
     labels: { flexDirection: 'row', gap: 16 },
     label: { fontSize: type.header, color: colors.muted },
     labelActive: { color: colors.text, fontWeight: '500' },
-    // 44x44 hit area (Apple's minimum recommended tap target), with the icon
-    // centered inside it. Offsets against the row's own padding so the icon
-    // itself still lines up visually where the old inline glyph sat.
+    // 44x44 hit area (Apple's min tap target); offsets against the row's
+    // own padding so the icon lines up where the old inline glyph sat.
     settingsButton: {
       width: 44,
       height: 44,

@@ -64,10 +64,8 @@ export default function HomeScreen() {
     useInputSession(flagScrollToEnd);
 
   useEffect(() => {
-    // Never leave the app stuck on the native splash screen if this
-    // throws -- log it and let the (still-rendered, blank) screen show
-    // instead; the safety-net timer in app/_layout.tsx hides the splash
-    // regardless after a few seconds either way.
+    // Never leave the app stuck on the native splash if this throws --
+    // log it; the safety-net timer in app/_layout.tsx hides it regardless.
     try {
       init();
     } catch (error) {
@@ -75,48 +73,22 @@ export default function HomeScreen() {
     }
   }, [init]);
 
-  // Hides the launch splash the moment the store is ready, so the splash
-  // goes straight to the real list instead of to a blank white frame
-  // while `!isReady` (that blank frame is still the fallback if init()
-  // above throws before ever setting isReady, which is what the 3s
-  // safety-net timer in app/_layout.tsx is for).
+  // Hides the launch splash as soon as the store is ready, rather than
+  // waiting on the 3s safety-net timer in app/_layout.tsx.
   useEffect(() => {
     if (isReady) hideSplashOnce();
   }, [isReady]);
 
-  // Keeps today/tomorrow and the Today/Tomorrow default in sync while the
-  // app runs: AppState-active, and timers to the next day-end/planning time.
+  // Keeps today/tomorrow and the view default in sync: AppState-active, and timers to the next E/P.
   useDayClock();
 
   useCarrySheetReveal();
 
   /**
-   * This row's own completion animation (strike-through, fade, collapse)
-   * has finished -- marks it 'hidden' in the store, which is what
-   * actually removes it from the rendered list (via `visibleTasks`
-   * below). A no-op inside `markHidden` itself if Undo already restored
-   * it, or the batch already committed some other way -- reading
-   * `completion` from the live store here (rather than this render's
-   * closed-over value) means that check is correct even though TaskRow
-   * calls this from a closure chain rooted well before this specific
-   * function instance existed (setTimeout -> Animated .start() ->
-   * .start()).
-   *
-   * Deliberately does NOT call LayoutAnimation here (a bug fixed in spec
-   * v8): by this point the row has already shrunk itself to zero height
-   * via its own Animated.timing, so removing it from the array is a
-   * zero-pixel change on its own -- LayoutAnimation had nothing left to
-   * usefully animate, and applying a second, native-level automatic
-   * transition on top of a still-live per-row Animated one is exactly
-   * the kind of overlap that left a neighboring row clipped to half its
-   * height in the owner's screenshot (both systems fighting over the
-   * same view's height in the same commit).
-   *
-   * Wrapped in useCallback with an empty dependency array -- nothing it
-   * reads (useAppStore.getState, markHidden) ever changes, so this
-   * reference is stable across every render, which is required for
-   * React.memo(TaskRow) to actually skip re-rendering rows whose task
-   * data hasn't changed.
+   * Marks the row 'hidden' once its animation finishes. Reads
+   * `completion` from the live store, not the closed-over value, since
+   * this fires from a timeout chain rooted well before this render. No
+   * LayoutAnimation here (spec v8 fix) -- it clipped a neighboring row's height before.
    */
   const handleAnimationComplete = useCallback(
     (task: { id: string }) => {
@@ -127,34 +99,16 @@ export default function HomeScreen() {
   );
 
   /**
-   * Restores every task in the pending batch (spec 3.2). The store's
-   * `restoreVersion` (bumped per task by `undoPending`) is folded into
-   * the FlatList's key, forcing a fresh TaskRow mount for each restored
-   * task -- that's what actually makes a restored row look normal again.
-   * Clearing its `completion` entry alone isn't enough if Undo is tapped
-   * WHILE the row's own strike-through/fade/collapse animation is still
-   * running: that row is just sitting there mid-animation with
-   * isCompleting/isCollapsing already true and opacity/height already
-   * animating toward 0. Manually resetting every piece of that animated
-   * state (stopping two Animated.timings, restoring opacity to 1,
-   * dropping the collapsed height, un-striking the text, and closing the
-   * swipeable) would be fiddly and easy to get subtly wrong; forcing an
-   * unmount+remount via the key resets all of it at once, guaranteed, the
-   * same way a genuinely fresh task row already does.
-   *
-   * Deliberately does NOT call LayoutAnimation here either (see the
-   * comment on handleAnimationComplete above) -- the restored row simply
-   * reappears via the normal React/FlatList layout pass, rather than
-   * fighting the row it's replacing's own still-unwinding Animated
-   * collapse for control of the same native view.
+   * Restores every task in the batch. Bumping `restoreVersion` (folded
+   * into the FlatList key) forces a fresh TaskRow mount instead of
+   * reversing a part-finished animation in place.
    */
   const handleUndo = useCallback(() => {
     undoPending();
   }, [undoPending]);
 
-  // Skip, the backdrop tap, and Move must always hide the sheet, even if
-  // the store update itself throws -- hideCarrySheet is a single,
-  // unconditional state set that can't fail the same way.
+  // Skip/backdrop-tap/Move must always hide the sheet even if the store
+  // update itself throws -- hideCarrySheet can't fail the same way.
   const handleSkipCarrySheet = useCallback(() => {
     try {
       skipCarrySheet();
@@ -174,38 +128,18 @@ export default function HomeScreen() {
     [moveCarryOverTasks, hideCarrySheet]
   );
 
-  // Stable reference unless todayTasks or completion actually change --
-  // passed to CarryOverSheet, which otherwise has no way to tell "a new
-  // task list" apart from "the same list, re-filtered because the parent
-  // re-rendered for an unrelated reason". Excludes every task currently
-  // mid-completion (pending or hidden), not just one.
+  // Stable unless todayTasks/completion change -- so CarryOverSheet can tell a new list from an unrelated re-render.
   const todayUnfinishedTasks = useMemo(() => excludeCompleting(todayTasks, completion), [todayTasks, completion]);
 
-  // Stable {version, count} for the Undo button -- derived from
-  // pendingBatch (whose reference only changes when the store actually
-  // updates it), memoized so re-renders for unrelated reasons don't hand
-  // UndoButton a "new" object that would needlessly restart its ring.
+  // Stable so unrelated re-renders don't hand UndoButton a "new" object that restarts its ring.
   const undoBatchInfo: UndoBatchInfo | null = useMemo(
     () => (pendingBatch ? { version: pendingBatch.version, count: pendingBatch.tasks.length } : null),
     [pendingBatch]
   );
 
-  // Memoized so this array's own reference stays stable across renders
-  // that don't actually change which tasks should show (e.g. the Undo
-  // button's ring animation ticking, or anything else re-rendering this
-  // screen for an unrelated reason) -- on its own this wouldn't stop
-  // TaskRow from re-rendering (React.memo compares its OWN `task` prop,
-  // not this array), but it does mean FlatList doesn't have to redo its
-  // internal bookkeeping for a `data` array that's reference-different
-  // but content-identical to last time.
   const rawTasks = selectedView === 'today' ? todayTasks : tomorrowTasks;
   const tasks = useMemo(() => visibleTasks(rawTasks, completion), [rawTasks, completion]);
 
-  // Stable list props, so FlatList doesn't treat every keystroke (or any
-  // other unrelated re-render) as "everything about this list might have
-  // changed". keyExtractor still legitimately depends on restoreVersion
-  // (it needs to change when a task is restored); the others depend on
-  // nothing that changes outside of a real list update.
   const keyExtractor = useCallback((item: Task) => `${item.id}:${restoreVersion[item.id] ?? 0}`, [restoreVersion]);
 
   const renderItem = useCallback(
@@ -220,16 +154,12 @@ export default function HomeScreen() {
     [tasks.length, styles]
   );
 
-  // Spec 3.4/4 v6: Today's empty state is "Done for today." once a batch
-  // committed today has actually emptied it by finishing tasks -- Tomorrow
-  // always gets the normal prompt, and so does Today before that's true.
+  // Spec 3.4/4 v6: "Done for today." only once a batch has emptied the list by finishing tasks.
   const emptyMessage =
     selectedView === 'today' && lastCompletedDate === todayDay ? 'Done for today.' : 'Nothing here. Tap + to add.';
 
-  // Spec 3.2/3.4: up to two lines at the end of the list -- the "list
-  // full" line and the carry-over line/link -- computed by useFooterLines
-  // (wrapping the pure footerLines() helper) so every combination is unit
-  // tested there instead of re-derived in JSX.
+  // Spec 3.2/3.4: up to two footer lines, computed by useFooterLines
+  // (wraps footerLines()) so combinations are unit tested, not re-derived here.
   const footerLineList = useFooterLines();
   const footerElement = useMemo(() => {
     if (footerLineList.length === 0) return null;
@@ -275,15 +205,9 @@ export default function HomeScreen() {
         />
 
         {/*
-          Deliberately no "tap outside to close" Pressable wraps this
-          list: a tap on a row would reach BOTH it and the row's own
-          touch handling (different touch systems -- rows sit inside a
-          gesture-handler Swipeable), racing each other for the same tap.
-          Closing on "tap outside" is handled entirely by
-          keyboardShouldPersistTaps="handled" (a tap on a row never
-          auto-dismisses the keyboard) plus InputBar's own keyboardDidHide
-          listener (anything else -- empty list space, the header --
-          blurs the TextInput natively, which closes the bar from there).
+          No "tap outside to close" Pressable here -- it would race the
+          row's own gesture-handler Swipeable for the same touch. Taps
+          outside a row blur natively via keyboardShouldPersistTaps.
         */}
         <View style={styles.listArea} onLayout={handleListAreaLayout}>
           <FlatList

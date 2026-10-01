@@ -6,7 +6,7 @@ export type Colors = {
   faint: string;
   /** Swipe-to-complete reveal background, and the settings day-end segmented control's track. */
   swipeBackground: string;
-  /** FAB / input bar / carry-over sheet background -- distinct from `background` since dark mode keeps these a shade lighter than the true-black screen behind them. */
+  /** FAB/input bar/sheet background -- lighter than `background` so dark mode's true-black screen still shows depth. */
   surface: string;
   border: string;
   /** Carry-over sheet's backdrop, behind the sheet itself. */
@@ -17,7 +17,7 @@ export type Colors = {
   pillRing: string;
   /** Opacity for the FAB/Undo button's drop shadow -- 0 in dark mode (spec v8: "the FAB has no shadow"). */
   shadowOpacity: number;
-  /** Disabled `Move` button background (spec v8.1) -- distinct from `faint` so it reads as clearly inert in both themes rather than just a dimmer version of the active color. */
+  /** Disabled `Move` button background (spec v8.1) -- a dedicated token, not a dimmer `faint`, so it reads as clearly inert. */
   disabledBackground: string;
 };
 

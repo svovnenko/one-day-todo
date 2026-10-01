@@ -5,15 +5,10 @@ import { AppState } from 'react-native';
 import { useAppStore } from '@/store/useAppStore';
 
 /**
- * `evaluateCarryPrompt` (run from the store's runRollover/refreshMode)
- * only marks `carryPromptDue` -- it never shows the sheet itself, even if
- * that happens while Settings is open or an AppState transition is in
- * flight. This hook is the one place that decides to actually reveal it,
- * and only once it's both focused (e.g. back from Settings) and the app
- * is active -- showing an RN Modal-adjacent sheet mid-transition can
- * otherwise leave an invisible layer swallowing every touch on iOS.
- * Re-checks whenever `carryPromptDue` or focus changes, and again on
- * every AppState transition (covers "backgrounded, tap the notification").
+ * evaluateCarryPrompt only marks `carryPromptDue` -- this hook decides
+ * when to actually reveal the sheet, only once focused AND active
+ * (showing it mid-transition could leave an invisible layer swallowing
+ * touches on iOS). Re-checks on focus/AppState changes.
  */
 export function useCarrySheetReveal(): void {
   const carryPromptDue = useAppStore((s) => s.carryPromptDue);

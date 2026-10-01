@@ -30,34 +30,26 @@ const BOTTOM_OFFSET = 80;
 const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 
 /**
- * Spec 3.2 / 4: round 96pt Undo button, bottom center, its bottom edge
- * raised 80pt above the safe area (center about 130pt up, above the +
- * FAB) -- dark background, only the white "Undo" text, no icon. A white
- * 4pt ring empties clockwise from 12 o'clock over UNDO_WINDOW_MS. When
- * the batch has 2+ tasks, a small count shows under "Undo".
+ * Spec 3.2/4: round 96pt Undo button, bottom center, raised 80pt above
+ * the safe area. A ring empties clockwise from 12 o'clock over
+ * UNDO_WINDOW_MS; shows a count once the batch has 2+ tasks.
  *
- * This component manages its own show/reset/fade-out purely from `batch`
- * (rather than being mounted with a `key`, which would unmount-and-remount
- * on ANY change, including batch -> null, skipping the "fades out when
- * the time is up" exit animation -- spec 4). Instead: null -> non-null
- * shows it and starts the ring; non-null -> non-null with a DIFFERENT
- * `version` (another task joined the batch) resets the ring instantly, no
- * fade; non-null -> null fades the whole button out before unmounting.
+ * Manages its own show/reset/fade-out purely from `batch` (not a `key`,
+ * which would skip the exit fade on batch -> null): null -> non-null
+ * shows and starts the ring; a new `version` resets it instantly;
+ * non-null -> null fades out before unmounting.
  */
 export function UndoButton({ batch, onUndo }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mounted, setMounted] = useState(batch !== null);
-  // Lazy useState instead of useRef: only ever mutated through its own
-  // methods (setValue/timing), never reassigned, so it's a one-time
-  // value rather than a mutable ref cell -- safe to read during render.
+  // One-time value (only ever mutated via setValue/timing) -- safe to read during render, unlike a ref.
   const [opacity] = useState(() => new Animated.Value(batch !== null ? 1 : 0));
   const progress = useSharedValue(0);
   const previousVersion = useRef<number | null>(null);
 
-  // Appears immediately the moment a batch shows up, adjusted directly
-  // during render (rather than in the effect below) so there's no extra
-  // frame where the button hasn't appeared yet.
+  // Appears immediately on a new batch, adjusted during render (not the
+  // effect below) so there's no extra unseen frame.
   if (batch !== null && !mounted) {
     setMounted(true);
   }

@@ -7,10 +7,9 @@ import { isListFull } from '@/logic/limits';
 import { useAppStore } from '@/store/useAppStore';
 
 /**
- * Wraps the pure `footerLines()` with the store selectors it needs (spec
- * 3.2/3.4): whether the viewed list is full, whether Tomorrow is full,
- * and whether Today has anything left worth moving (excluding tasks
- * currently mid-completion, same as the carry-over sheet itself).
+ * Wraps the pure footerLines() with its store selectors (spec 3.2/3.4):
+ * viewed-list-full, Tomorrow-full, and whether Today has anything
+ * movable (excluding mid-completion tasks).
  */
 export function useFooterLines(): FooterLine[] {
   const selectedView = useAppStore((s) => s.selectedView);

@@ -8,18 +8,11 @@ export type CarryOverSettings = {
 };
 
 /**
- * Spec 3.4: show the "move unfinished to tomorrow" sheet when the app is
- * active in planning mode, today has at least one MOVABLE unfinished task
- * (carry_count < MAX_CARRY_COUNT), tomorrow has at least one free slot
- * (spec 3.4 v7 -- a sheet where nothing can be moved is a dead end), and
- * the prompt hasn't already been shown for this logical day.
- *
- * Skipping for either v7 reason does NOT mark the prompt as shown --
- * `lastCarryPromptDate` is only ever set by an actual Move/Let-them-go, so
- * if a Tomorrow slot frees up later that evening, the next evaluation
- * (the app becoming active, or crossing P) can show the sheet then. This
- * function is never called reactively on every Tomorrow swipe, only from
- * the store's existing evaluation points, so it doesn't need to.
+ * Spec 3.4: shows the carry-over sheet when planning mode is active,
+ * Today has a movable unfinished task, Tomorrow has a free slot (v7: a
+ * dead-end sheet is worse than none), and the prompt hasn't shown today.
+ * Skipping for the movable/free-slot reasons does NOT mark it shown, so
+ * a freed-up slot later that evening can still trigger it.
  */
 export function shouldShowCarryPrompt(
   now: Date,
@@ -65,16 +58,12 @@ export function buildCarryOverCandidates(todayTasks: Task[], tomorrowTasks: Task
 }
 
 /**
- * Moves the given tasks from `fromDay` to `toDay`, incrementing their carry
- * count. Tasks at or past MAX_CARRY_COUNT are skipped as a safety net
- * (spec 3.4 v5) even if the caller passed one -- the UI shouldn't let that
- * happen, but this is the last line of defense. If a task with the same
- * text already exists in `toDay`, it isn't duplicated -- that task's carry
- * count becomes max(existing, moved + 1) instead, and the moved-from row is
- * dropped (spec 3.4). This is the one DB-touching export of this module, so
- * it `require()`s tasksRepo lazily instead of importing it at module scope
- * -- that keeps the pure decision functions above importable (and unit
- * testable) without pulling in expo-sqlite's native binding.
+ * Moves tasks from `fromDay` to `toDay`, incrementing carry count.
+ * Blocked tasks are skipped as a safety net (spec 3.4 v5). A same-text
+ * match in `toDay` absorbs the move instead of duplicating (its carry
+ * count becomes max(existing, moved + 1)); the moved-from row is dropped
+ * (spec 3.4). Lazily requires tasksRepo so the pure functions above stay
+ * importable without pulling in expo-sqlite's native binding.
  */
 export function moveTasks(taskIds: string[], fromDay: string, toDay: string): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require, see the doc comment above

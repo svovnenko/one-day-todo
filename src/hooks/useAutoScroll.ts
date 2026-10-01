@@ -2,13 +2,9 @@ import { useCallback, useRef } from 'react';
 import type { FlatList, LayoutChangeEvent } from 'react-native';
 
 /**
- * Scrolls the list to reveal a newly added row (spec 3.3), but only when
- * it isn't already fully visible above the input bar/keyboard.
- * `listAreaHeightRef` tracks the list container's OWN layout height (via
- * `onLayout`), which already shrinks when KeyboardAvoidingView makes room
- * for the keyboard -- so "is the content taller than what's visible"
- * naturally accounts for the keyboard/input bar with no extra logic.
- * Adding to a list that already fits on screen moves nothing.
+ * Scrolls to reveal a newly added row (spec 3.3), only when it isn't
+ * already visible above the input bar/keyboard. `listAreaHeightRef`
+ * tracks the list container's own (keyboard-shrunk) height via onLayout.
  */
 export function useAutoScroll<T>(listRef: React.RefObject<FlatList<T> | null>) {
   const scrollToNewPendingRef = useRef(false);

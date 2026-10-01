@@ -5,17 +5,11 @@ import { msUntilNext } from '@/logic/dates';
 import { useAppStore } from '@/store/useAppStore';
 
 /**
- * Keeps the day/mode in sync while the app is running (spec 3.5):
- * - runs the full rollover on AppState becoming active (the day may have
- *   changed while backgrounded, and iOS suspends JS timers in the
- *   background so they can't be relied on there),
- * - commits the pending Undo batch when AppState goes to background (spec
- *   3.2 v4: leaving the app commits it, same as a rollover or the timeout),
- * - arms an in-foreground timer to the next day-end (E) that runs the full
- *   rollover and re-arms itself,
- * - arms an in-foreground timer to the next planning time (P) that flips
- *   the mode default and re-arms itself.
- * Re-arms whenever the schedule settings change (spec 3.6).
+ * Keeps day/mode in sync while running (spec 3.5): full rollover on
+ * AppState active (iOS suspends JS timers in the background), commits
+ * the pending Undo batch on backgrounding (spec 3.2 v4), and arms
+ * in-foreground timers to the next day-end (E) and planning time (P).
+ * Re-arms on schedule changes.
  */
 export function useDayClock() {
   const dayEndTime = useAppStore((s) => s.settings.dayEndTime);

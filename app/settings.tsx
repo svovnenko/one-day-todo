@@ -163,11 +163,8 @@ function makeStyles(colors: Colors) {
       marginTop: 20,
     },
     group: { backgroundColor: colors.background },
-    // Spec v8.1: minHeight alone let a row's control (the Switch, the
-    // compact time picker) sit flush against the divider below it once
-    // the control was taller than the text line centered inside --
-    // explicit vertical padding guarantees breathing room regardless of
-    // which control a row holds.
+    // Spec v8.1: minHeight alone let a tall control (Switch, time picker)
+    // sit flush against the divider below -- explicit padding guarantees breathing room.
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -191,18 +188,14 @@ function makeStyles(colors: Colors) {
       backgroundColor: colors.swipeBackground,
       borderRadius: 8,
       padding: 2,
-      // Spec v8.1: a hard clip at the track's own rounded edge, so a
-      // 5-option row (Day ends at) can never bleed past the segment --
-      // and past the screen edge -- at narrow widths (320pt, iPhone SE).
+      // Spec v8.1: hard clip at the track's rounded edge, so a 5-option
+      // row can never bleed past the segment at narrow widths (320pt).
       overflow: 'hidden',
     },
     dayEndOption: {
       flex: 1,
-      // minWidth: 0 overrides each option's implicit content-based floor
-      // -- without it, five equal flex:1 shares can still refuse to
-      // shrink smaller than their own text's natural width, which is
-      // exactly what pushed the 5th option (04:00) past the segment's
-      // right edge.
+      // Overrides each option's implicit content-based floor -- without
+      // it, 5 equal shares can refuse to shrink below their text's width.
       minWidth: 0,
       paddingVertical: 7,
       paddingHorizontal: 2,

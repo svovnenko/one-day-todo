@@ -1,9 +1,6 @@
-// Manual Jest mock for src/db/tasksRepo.ts (see jest.setup.ts's
-// `jest.mock('@/db/tasksRepo')`): an in-memory table implementing the
-// same function signatures as the real repo, so useAppStore's real logic
-// can run under Jest without expo-sqlite. Reset between tests via
-// __tests__/testUtils/fakeRepos.ts, which is also the only place these
-// __reset/__getAll test-only exports should be reached from.
+// Manual Jest mock for src/db/tasksRepo.ts (jest.setup.ts's
+// jest.mock('@/db/tasksRepo')) -- an in-memory table so useAppStore's
+// real logic runs under Jest without expo-sqlite. Reset via __tests__/testUtils/fakeRepos.ts.
 import type { Task } from '../tasksRepo';
 
 let tasks: Task[] = [];

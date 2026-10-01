@@ -6,18 +6,10 @@ import { isListFull } from '@/logic/limits';
 import { useAppStore } from '@/store/useAppStore';
 
 /**
- * Owns the input bar's open/closed state and every path that can add a
- * task (Return, and the keyboard hiding with a non-empty draft), per
- * spec 3.2/3.3: discard-and-warn when the target list is already full
- * (or just reached the limit on this very add -- the store's own return
- * value is a safety net for the second case), otherwise flag the next
- * auto-scroll and keep the bar open unless that add was the one that hit
- * the limit.
- *
- * `flagScrollToEnd` is injected (from `useAutoScroll`) rather than
- * imported directly, so this hook doesn't need to know the list has
- * auto-scroll at all -- just that something wants to know after a
- * successful add.
+ * Owns the input bar's open/closed state and every add path (Return,
+ * keyboard-hide-with-draft): discard-and-warn when full (spec 3.2/3.3),
+ * otherwise flag auto-scroll. `flagScrollToEnd` is injected so this
+ * hook doesn't need to know about auto-scroll itself.
  */
 export function useInputSession(flagScrollToEnd: () => void) {
   const [inputVisible, setInputVisible] = useState(false);

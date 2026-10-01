@@ -1,26 +1,13 @@
 export type CompletionState = 'pending' | 'hidden';
 
 /**
- * Owns the pending-undo batch's timer lifecycle (spec 3.2) AND, per task,
- * whether its row is still animating out ('pending') or has fully
- * finished and is just waiting for the batch to resolve ('hidden') --
- * plus a `restoreVersion` per task, bumped on Undo so a restored row's
- * component remounts fresh instead of trying to reverse a part-finished
- * animation in place.
+ * Owns the pending-undo batch's timer (spec 3.2) and per-task state --
+ * 'pending' (animating) or 'hidden' (finished), plus a restoreVersion
+ * bumped on Undo so a restored row remounts fresh rather than reversing
+ * a part-finished animation in place.
  *
- * Each `add()` appends a task to the batch (marking it 'pending') and
- * restarts the countdown from `windowMs`; the batch commits (via
- * `onCommit`, clearing those tasks' completion entries first) either when
- * that timer fires or when `commit()` is called explicitly (rollover,
- * backgrounding). `cancel()` (Undo) clears the batch without committing,
- * dropping its tasks' completion entries and bumping their restore
- * versions instead.
- *
- * Deliberately has no SQLite/store dependency -- it only schedules
- * setTimeout/clearTimeout and hands the accumulated tasks to `onCommit`,
- * so it's fully unit-testable with jest fake timers (see
- * __tests__/completionBatch.test.ts). useAppStore.ts owns one instance
- * per app run and wires `onCommit` to the real deletes + a state sync.
+ * No SQLite/store dependency, so it's unit-testable with fake timers;
+ * useAppStore.ts owns one instance and wires onCommit to the real deletes.
  */
 export class CompletionBatch<T extends { id: string }> {
   private tasks: T[] = [];
@@ -58,12 +45,7 @@ export class CompletionBatch<T extends { id: string }> {
     this.timeoutId = setTimeout(() => this.commit(), this.windowMs);
   }
 
-  /**
-   * The row's own completion animation has finished. A no-op if the task
-   * isn't in the batch any more (already restored by Undo, or the batch
-   * already committed some other way -- both harmless, since there's
-   * nothing left to mark).
-   */
+  /** The row's animation finished. No-op if the task isn't in the batch any more (already restored, or already committed). */
   markHidden(taskId: string): void {
     if (this.completionState[taskId] === undefined || this.completionState[taskId] === 'hidden') return;
     this.completionState = { ...this.completionState, [taskId]: 'hidden' };

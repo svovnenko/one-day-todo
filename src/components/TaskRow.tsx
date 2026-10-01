@@ -9,19 +9,9 @@ import { type Colors, layout, type } from '@/theme';
 
 type Props = {
   task: Task;
-  /**
-   * Fires the instant the swipe crosses the threshold (spec 3.2/4): the
-   * caller should start the Undo window right away (the Undo button
-   * must appear immediately, not ~500ms later once this row's own
-   * animation finishes).
-   */
+  /** Fires at the swipe threshold (spec 3.2/4) -- the Undo window/button must start immediately, not after this row's own animation finishes. */
   onSwipeThreshold: (task: Task) => void;
-  /**
-   * Fires once this row's entire completion animation (strike-through,
-   * fade, height collapse) has fully played out. The caller should only
-   * now actually remove the row from whatever list it renders --
-   * removing it earlier would cut the animation short and/or leave a gap.
-   */
+  /** Fires once the completion animation has fully played out -- only then should the caller remove this row (earlier would cut it short). */
   onAnimationComplete: (task: Task) => void;
 };
 
@@ -31,30 +21,20 @@ const FADE_DURATION_MS = 150;
 const COLLAPSE_DURATION_MS = 200;
 
 /**
- * Swipe right to complete (full swipe, revealing a light-grey background
- * with a checkmark). No editing (spec 3.2 v4): a tap does nothing -- no
- * handler, no highlight, no feedback of any kind. A plain View, not a
- * Pressable, so there's nothing for a tap to trigger.
+ * Swipe right to complete (reveals a light-grey background + checkmark).
+ * No editing (spec 3.2 v4) -- a plain View, not Pressable, so a tap does nothing.
  *
- * Wrapped in React.memo: with the caller passing a stable
- * `task` object reference (see src/logic/taskListDiff.ts) and stable
- * `onSwipeThreshold`/`onAnimationComplete` callbacks (both useCallback'd
- * with empty dependency arrays in app/index.tsx), this only re-renders
- * when THIS row's own data actually changes, not on every keystroke in
- * the input bar or every other row's swipe/completion.
+ * Wrapped in React.memo: with a stable `task` reference
+ * (src/logic/taskListDiff.ts) and stable callbacks (useCallback'd in
+ * app/index.tsx), this only re-renders when its own data changes.
  */
 export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimationComplete }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [isCompleting, setIsCompleting] = useState(false);
-  // Only applied once the collapse animation actually starts (see
-  // `isCollapsing`) -- until then the row sizes itself naturally (via
-  // styles.row's minHeight), so there's a real measured height to collapse
-  // FROM once completion begins. Without this, removing the row from the
-  // list left a permanent row-height gap -- the row's own Animated.View
-  // had faded to opacity 0, but opacity never affects layout, so it kept
-  // reserving its full height until (if ever) it actually left the
-  // rendered list.
+  // Only applied once the collapse animation starts -- until then the
+  // row sizes itself naturally, giving a real measured height to collapse
+  // FROM (without this, the row left a permanent height gap after fading).
   const [isCollapsing, setIsCollapsing] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const height = useRef(new Animated.Value(0)).current;
@@ -62,13 +42,8 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
   const swipeableRef = useRef<SwipeableMethods>(null);
 
   function handleLayout(event: LayoutChangeEvent) {
-    // Once collapsing, this view's own height is being explicitly driven
-    // by the `height` Animated.Value below -- onLayout keeps firing as
-    // that shrinks, and without this guard those self-inflicted,
-    // ever-smaller readings would overwrite the real measurement this
-    // ref exists to remember (harmless today, since the value is already
-    // consumed before collapsing starts, but a landmine for anything
-    // that reads it later).
+    // Guards against self-inflicted, ever-smaller onLayout readings once
+    // collapsing starts (height is explicitly driven by the Animated.Value below).
     if (isCollapsing) return;
     measuredHeightRef.current = event.nativeEvent.layout.height;
   }
@@ -76,13 +51,10 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
   function handleFullSwipe() {
     if (isCompleting) return;
     setIsCompleting(true);
-    // The row stays exactly where the swipe left it (open, revealing the
-    // grey/checkmark zone) -- it must never slide back closed. Only the
-    // fade below hides it, and it fades everything (row + revealed zone)
-    // together, so nothing is left showing once the text has faded.
+    // The row stays open (never slides back closed) -- the fade below
+    // hides everything together once the text has faded.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); // best-effort, never user-visible
-    // Start the Undo window/button right now, before the animation below
-    // even begins -- this is purely cosmetic and mustn't delay it.
+    // Starts the Undo window/button now, before the animation below even begins.
     onSwipeThreshold(task);
     setTimeout(() => {
       Animated.timing(opacity, {
@@ -90,10 +62,8 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
         duration: FADE_DURATION_MS,
         useNativeDriver: true,
       }).start(() => {
-        // Lock in the row's last real (natural) height as the animation's
-        // starting point, then shrink it to 0 so the rows below slide up
-        // smoothly instead of the list snapping shut the instant this row
-        // actually leaves the data array.
+        // Locks in the row's last real height as the collapse's starting
+        // point, so rows below slide up smoothly instead of snapping shut.
         height.setValue(measuredHeightRef.current);
         setIsCollapsing(true);
         Animated.timing(height, {
@@ -121,10 +91,9 @@ export const TaskRow = memo(function TaskRow({ task, onSwipeThreshold, onAnimati
               <Text style={styles.checkmark}>✓</Text>
             </View>
           )}
-          // Only left actions exist (spec: swipe right to complete), so any
-          // "open" event -- regardless of the reported direction -- means the
-          // task completed. (ReanimatedSwipeable reports SwipeDirection.RIGHT
-          // for a rightward drag that opens the left action panel, not LEFT.)
+          // Only left actions exist (swipe right to complete), so any "open"
+          // event means completed -- ReanimatedSwipeable reports RIGHT for
+          // a rightward drag opening the left panel, not LEFT.
           onSwipeableOpen={() => handleFullSwipe()}
         >
           <View style={styles.row}>
@@ -150,9 +119,8 @@ function makeStyles(colors: Colors) {
       paddingVertical: 6,
       backgroundColor: colors.background,
     },
-    // lineHeight 26 + the row's 6pt top/bottom padding adds up to exactly
-    // layout.rowHeight (38) for a single line, so a one-line row looks
-    // identical to before wrapping existed; extra lines just grow the row.
+    // lineHeight 26 + 6pt padding = layout.rowHeight (38) for one line --
+    // matches the pre-wrap look; extra lines just grow the row.
     text: { fontSize: type.task, lineHeight: 26, color: colors.text },
     textCompleting: { color: colors.faint, textDecorationLine: 'line-through' },
     counter: { fontSize: type.counter, color: colors.faint },
