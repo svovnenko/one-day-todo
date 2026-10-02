@@ -37,6 +37,7 @@ The target user is the owner only (single user, a personal app).
 | Notifications | **expo-notifications**, local only | Daily "plan tomorrow" reminder |
 | Time picker | `@react-native-community/datetimepicker` | Included in Expo Go |
 | Haptics | `expo-haptics` | Light tap on complete |
+| Icons (v8.2) | Inline **SVG components** in `src/components/icons/` (`react-native-svg`), or a tree-shakeable icon library (e.g. `lucide-react-native`) if many icons are needed | **Never import the whole `@expo/vector-icons` package**: it ships ~4 MB of icon fonts in every update. If one icon font is ever needed, deep-import only that family (`@expo/vector-icons/Ionicons`). |
 | Backend / cloud | **None** | |
 | UI language | **English only** | No i18n library |
 | Theme | **Light + dark (v8)**: `System` (default) / `Light` / `Dark` in Settings | Light matches the reference design; dark mirrors it on true black |

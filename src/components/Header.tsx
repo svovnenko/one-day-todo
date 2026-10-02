@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { GearIcon } from '@/components/icons/GearIcon';
 import { useTheme } from '@/hooks/useTheme';
 import type { Mode, View as SelectedView } from '@/store/useAppStore';
 import { type Colors, type } from '@/theme';
@@ -35,7 +35,7 @@ export function Header({ todayLabel, tomorrowLabel, selectedView, mode, onSelect
         ) : null}
       </View>
       <Pressable style={styles.settingsButton} onPress={onPressSettings} accessibilityLabel="Settings">
-        <Ionicons name="settings-outline" size={20} color={colors.muted} />
+        <GearIcon size={20} color={colors.muted} />
       </Pressable>
     </View>
   );
