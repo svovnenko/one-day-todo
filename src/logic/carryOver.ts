@@ -57,28 +57,56 @@ export function buildCarryOverCandidates(todayTasks: Task[], tomorrowTasks: Task
   }));
 }
 
+type TasksRepo = typeof import('@/db/tasksRepo');
+
+// Lazily required so the pure functions above stay importable without
+// pulling in expo-sqlite's native binding.
+function loadTasksRepo(): TasksRepo {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require, see above
+  return require('@/db/tasksRepo');
+}
+
 /**
- * Moves tasks from `fromDay` to `toDay`, incrementing carry count.
- * Blocked tasks are skipped as a safety net (spec 3.4 v5). A same-text
- * match in `toDay` absorbs the move instead of duplicating (its carry
- * count becomes max(existing, moved + 1)); the moved-from row is dropped
- * (spec 3.4). Lazily requires tasksRepo so the pure functions above stay
- * importable without pulling in expo-sqlite's native binding.
+ * Moves one task to `toDay`, incrementing its carry count. A blocked task
+ * is skipped as a safety net (spec 3.4 v5). A same-text match in `toDay`
+ * absorbs the move instead of duplicating (its carry count becomes
+ * max(existing, moved + 1)); the moved-from row is dropped (spec 3.4).
  */
+function moveOne(tasksRepo: TasksRepo, task: Task, toDay: string): void {
+  if (isBlockedFromMoving(task)) return;
+  const movedCarryCount = task.carryCount + 1;
+  const existing = tasksRepo.findByDayAndText(toDay, task.text);
+  if (existing) {
+    tasksRepo.setCarryCount(existing.id, Math.max(existing.carryCount, movedCarryCount));
+    tasksRepo.remove(task.id);
+  } else {
+    tasksRepo.moveToDay(task.id, toDay, movedCarryCount);
+  }
+}
+
+/** Moves the selected tasks from `fromDay` to `toDay` (the evening sheet's Move N). */
 export function moveTasks(taskIds: string[], fromDay: string, toDay: string): void {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require, see the doc comment above
-  const tasksRepo: typeof import('@/db/tasksRepo') = require('@/db/tasksRepo');
+  const tasksRepo = loadTasksRepo();
   const idSet = new Set(taskIds);
   for (const task of tasksRepo.listByDay(fromDay)) {
-    if (!idSet.has(task.id)) continue;
-    if (isBlockedFromMoving(task)) continue;
-    const movedCarryCount = task.carryCount + 1;
-    const existing = tasksRepo.findByDayAndText(toDay, task.text);
-    if (existing) {
-      tasksRepo.setCarryCount(existing.id, Math.max(existing.carryCount, movedCarryCount));
-      tasksRepo.remove(task.id);
-    } else {
-      tasksRepo.moveToDay(task.id, toDay, movedCarryCount);
-    }
+    if (idSet.has(task.id)) moveOne(tasksRepo, task, toDay);
   }
+}
+
+/**
+ * Spec 3.5 v9, the catch-up sheet's Keep N: moves the selected past-day
+ * tasks to `todayDay` (appended in day-then-position order, carry count + 1
+ * once however many days were missed), then deletes every remaining
+ * catch-up task -- all in one transaction, so it either fully lands or not
+ * at all.
+ */
+export function moveCatchUpToToday(taskIds: string[], todayDay: string): void {
+  const tasksRepo = loadTasksRepo();
+  const idSet = new Set(taskIds);
+  tasksRepo.inTransaction(() => {
+    for (const task of tasksRepo.listBefore(todayDay)) {
+      if (idSet.has(task.id)) moveOne(tasksRepo, task, todayDay);
+    }
+    tasksRepo.purgeBefore(todayDay);
+  });
 }

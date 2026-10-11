@@ -10,12 +10,25 @@ import { freeSlots } from '@/logic/limits';
 import { type Colors, layout } from '@/theme';
 
 type Props = {
+  /** 'evening' (default) moves today's leftovers to Tomorrow; 'catchUp' (spec 3.5 v9) moves past-day leftovers to Today. */
+  mode?: 'evening' | 'catchUp';
   visible: boolean;
+  /** The rows. */
   tasks: Task[];
-  tomorrowTasks: Task[];
+  /** The list the selection moves INTO (evening: Tomorrow; catchUp: Today) -- sets N and the duplicate rule. */
+  targetTasks: Task[];
+  /** `Move N` / `Keep N`. */
   onMove: (checkedIds: string[]) => void;
+  /** `Let them go`; in evening mode the backdrop tap does this too. */
   onSkip: () => void;
+  /** catchUp only: the backdrop tap closes the sheet and deletes nothing (spec 3.5 v9). */
+  onDismiss?: () => void;
 };
+
+const COPY = {
+  evening: { title: 'Move unfinished to tomorrow?', choose: 'Choose what to move', primary: 'Move' },
+  catchUp: { title: 'Left from last time', choose: 'Choose what to keep', primary: 'Keep' },
+} as const;
 
 const SLIDE_DURATION_MS = 220;
 const SHEET_OFFSCREEN_OFFSET = 320;
@@ -25,14 +38,16 @@ const LIST_FADE_HEIGHT = 24;
 
 /**
  * Spec 3.4/4 v7: bottom sheet, rounded top, plain text rows (no
- * checkboxes); full-width `Move N` + grey `Let them go`.
+ * checkboxes); full-width `Move N` + grey `Let them go`. The catch-up mode
+ * (spec 3.5 v9) is the same sheet with different copy, a different target
+ * list, and a backdrop tap that only closes.
  *
  * Not a React Native <Modal> -- presenting one while another native
  * transition is in flight (Settings dismissing, an AppState change)
  * could leave an invisible layer swallowing touches on iOS. This is a
  * plain absolutely positioned View, rendered last so it stacks on top.
  */
-export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }: Props) {
+export function CarryOverSheet({ mode = 'evening', visible, tasks, targetTasks, onMove, onSkip, onDismiss }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { height: windowHeight } = useWindowDimensions();
@@ -49,8 +64,12 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   const [listContentHeight, setListContentHeight] = useState(0);
   const isListScrollable = listContentHeight > listHeight + 1;
 
-  const candidates = buildCarryOverCandidates(tasks, tomorrowTasks);
-  const free = freeSlots(tomorrowTasks.length);
+  const copy = COPY[mode];
+  const candidates = buildCarryOverCandidates(tasks, targetTasks);
+  const free = freeSlots(targetTasks.length);
+  // Spec 3.5 v9: with Today full the catch-up sheet is just "Today is full" -- even a
+  // duplicate (which would merge for free) isn't selectable; only `Let them go` works.
+  const nothingSelectable = mode === 'catchUp' && free === 0;
 
   // Resets to all-unselected the moment the sheet becomes visible --
   // during render, not an effect, so there's no stale-then-corrected
@@ -75,7 +94,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
 
   if (!visible) return null;
 
-  // How many of tomorrow's free slots the selection would consume -- a
+  // How many of the target list's free slots the selection would consume -- a
   // deduplicating task merges instead of taking a new slot (spec 3.4 v5).
   const usedSlots = candidates.filter((c) => checked[c.task.id] && !c.blocked && !c.deduplicates).length;
 
@@ -99,16 +118,20 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
   }
 
   const movableCount = candidates.filter((c) => !c.blocked).length;
-  const subtitle = free < movableCount ? `Choose up to ${free}` : 'Choose what to move';
-  const moveLabel = selectedIds.length > 0 ? `Move ${selectedIds.length}` : 'Move';
+  const subtitle = nothingSelectable ? 'Today is full' : free < movableCount ? `Choose up to ${free}` : copy.choose;
+  const moveLabel = selectedIds.length > 0 ? `${copy.primary} ${selectedIds.length}` : copy.primary;
   const moveDisabled = selectedIds.length === 0;
 
   return (
     <View style={styles.backdrop} pointerEvents="box-none">
-      <Pressable style={StyleSheet.absoluteFill} onPress={onSkip} />
+      <Pressable
+        testID="carry-sheet-backdrop"
+        style={StyleSheet.absoluteFill}
+        onPress={mode === 'catchUp' ? onDismiss : onSkip}
+      />
       <Animated.View style={{ transform: [{ translateY }] }}>
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
-          <Text style={styles.title}>Move unfinished to tomorrow?</Text>
+          <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
           <View style={styles.listWrap}>
             <ScrollView
@@ -121,7 +144,7 @@ export function CarryOverSheet({ visible, tasks, tomorrowTasks, onMove, onSkip }
               {candidates.map(({ task, blocked, deduplicates }) => {
                 const isSelected = !!checked[task.id];
                 const slotsFull = !blocked && !deduplicates && !isSelected && usedSlots >= free;
-                const disabled = blocked || slotsFull;
+                const disabled = blocked || slotsFull || nothingSelectable;
                 const textStyle = isSelected
                   ? styles.rowTextSelected
                   : disabled

@@ -56,6 +56,11 @@ export default function HomeScreen() {
   const hideCarrySheet = useAppStore((s) => s.hideCarrySheet);
   const skipCarrySheet = useAppStore((s) => s.skipCarrySheet);
   const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
+  const catchUpTasks = useAppStore((s) => s.catchUpTasks);
+  const catchUpSheetVisible = useAppStore((s) => s.catchUpSheetVisible);
+  const hideCatchUpSheet = useAppStore((s) => s.hideCatchUpSheet);
+  const keepCatchUpTasks = useAppStore((s) => s.keepCatchUpTasks);
+  const letCatchUpTasksGo = useAppStore((s) => s.letCatchUpTasksGo);
 
   const router = useRouter();
   const listRef = useRef<FlatList<Task>>(null);
@@ -127,6 +132,26 @@ export default function HomeScreen() {
     },
     [moveCarryOverTasks, hideCarrySheet]
   );
+
+  // Same guarantee for the catch-up sheet: Keep N / Let them go always close it.
+  const handleKeepCatchUpTasks = useCallback(
+    (taskIds: string[]) => {
+      try {
+        keepCatchUpTasks(taskIds);
+      } finally {
+        hideCatchUpSheet();
+      }
+    },
+    [keepCatchUpTasks, hideCatchUpSheet]
+  );
+
+  const handleLetCatchUpTasksGo = useCallback(() => {
+    try {
+      letCatchUpTasksGo();
+    } finally {
+      hideCatchUpSheet();
+    }
+  }, [letCatchUpTasksGo, hideCatchUpSheet]);
 
   // Stable unless todayTasks/completion change -- so CarryOverSheet can tell a new list from an unrelated re-render.
   const todayUnfinishedTasks = useMemo(() => excludeCompleting(todayTasks, completion), [todayTasks, completion]);
@@ -232,9 +257,18 @@ export default function HomeScreen() {
       <CarryOverSheet
         visible={carrySheetVisible}
         tasks={todayUnfinishedTasks}
-        tomorrowTasks={tomorrowTasks}
+        targetTasks={tomorrowTasks}
         onMove={handleMoveCarryOverTasks}
         onSkip={handleSkipCarrySheet}
+      />
+      <CarryOverSheet
+        mode="catchUp"
+        visible={catchUpSheetVisible}
+        tasks={catchUpTasks}
+        targetTasks={todayTasks}
+        onMove={handleKeepCatchUpTasks}
+        onSkip={handleLetCatchUpTasksGo}
+        onDismiss={hideCatchUpSheet}
       />
     </SafeAreaView>
   );

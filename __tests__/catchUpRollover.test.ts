@@ -13,6 +13,15 @@ const WED = '2026-10-07';
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date(2026, 9, 7, 10, 0));
+  // The store is a module-level singleton shared by every test in this file,
+  // and these sheet flags are only ever cleared by user actions.
+  useAppStore.setState({
+    catchUpTasks: [],
+    catchUpDue: false,
+    catchUpSheetVisible: false,
+    carryPromptDue: false,
+    carrySheetVisible: false,
+  });
 });
 
 afterEach(() => {
@@ -119,5 +128,226 @@ describe('turning Keep unplanned tasks off', () => {
     expect(useAppStore.getState().settings.keepUnplanned).toBe(false);
     expect(useAppStore.getState().catchUpTasks).toEqual([]);
     expect(textsLeft()).toEqual([]);
+  });
+});
+
+describe('catch-up actions (spec 3.5 v9)', () => {
+  function state() {
+    return useAppStore.getState();
+  }
+
+  it('Keep N moves the selected tasks to Today, appended in day order with counter +1, and deletes the rest', () => {
+    resetFakeRepos();
+    tasksRepo.add(WED, 'Already today');
+    const tueTask = tasksRepo.add(TUE, 'Tuesday leftover');
+    const monTask = tasksRepo.add(MON, 'Monday leftover');
+    tasksRepo.add(MON, 'Not chosen');
+    state().init();
+
+    state().keepCatchUpTasks([tueTask.id, monTask.id]);
+
+    // Monday's task goes first even though it was selected second: day, then position.
+    expect(state().todayTasks.map((t) => [t.text, t.carryCount])).toEqual([
+      ['Already today', 0],
+      ['Monday leftover', 1],
+      ['Tuesday leftover', 1],
+    ]);
+    expect(state().catchUpTasks).toEqual([]);
+    // The raw table isn't in list order (that's what todayTasks above checks) -- just that nothing else survived.
+    expect([...textsLeft()].sort()).toEqual(['Already today', 'Monday leftover', 'Tuesday leftover']);
+    expect(state().catchUpSheetVisible).toBe(false);
+  });
+
+  it('a catch-up counts once however many days were missed', () => {
+    resetFakeRepos();
+    const old = tasksRepo.add(MON, 'Three days ago'); // opened on Wednesday: Monday and Tuesday were both missed
+    tasksRepo.setCarryCount(old.id, 2);
+    state().init();
+
+    state().keepCatchUpTasks([old.id]);
+
+    expect(state().todayTasks.map((t) => t.carryCount)).toEqual([3]);
+  });
+
+  it('follows the duplicate rule: same text as a Today task merges into it, with max(existing, moved + 1)', () => {
+    resetFakeRepos();
+    const existing = tasksRepo.add(WED, 'Call bank');
+    tasksRepo.setCarryCount(existing.id, 4);
+    const leftover = tasksRepo.add(TUE, 'Call bank');
+    tasksRepo.setCarryCount(leftover.id, 1);
+    state().init();
+
+    state().keepCatchUpTasks([leftover.id]);
+
+    expect(state().todayTasks.map((t) => [t.text, t.carryCount])).toEqual([['Call bank', 4]]);
+    expect(textsLeft()).toEqual(['Call bank']);
+  });
+
+  it("a x5 task can't be kept even if passed in -- it goes with the rest", () => {
+    resetFakeRepos();
+    const stuck = tasksRepo.add(TUE, 'Stuck');
+    tasksRepo.setCarryCount(stuck.id, 5);
+    state().init();
+
+    state().keepCatchUpTasks([stuck.id]);
+
+    expect(state().todayTasks).toEqual([]);
+    expect(textsLeft()).toEqual([]);
+  });
+
+  it('Let them go deletes every catch-up task and leaves Today alone', () => {
+    resetFakeRepos();
+    tasksRepo.add(WED, 'Today stays');
+    tasksRepo.add(MON, 'Gone 1');
+    tasksRepo.add(TUE, 'Gone 2');
+    state().init();
+
+    state().letCatchUpTasksGo();
+
+    expect(state().catchUpTasks).toEqual([]);
+    expect(textsLeft()).toEqual(['Today stays']);
+    expect(state().catchUpSheetVisible).toBe(false);
+  });
+
+  it('a backdrop dismiss deletes nothing, and the sheet is raised again on the next app open', () => {
+    resetFakeRepos();
+    tasksRepo.add(TUE, 'Waiting');
+    state().init();
+    state().showCarrySheetIfDue();
+    expect(state().catchUpSheetVisible).toBe(true);
+
+    state().hideCatchUpSheet();
+
+    expect(state().catchUpSheetVisible).toBe(false);
+    expect(state().catchUpDue).toBe(false);
+    expect(textsLeft()).toEqual(['Waiting']);
+    expect(state().catchUpTasks).toHaveLength(1);
+
+    state().runRollover(); // AppState -> active: the next app open
+
+    expect(state().catchUpDue).toBe(true);
+  });
+
+  it("changing a setting isn't an app open: it doesn't re-raise a sheet the user dismissed", () => {
+    resetFakeRepos();
+    tasksRepo.add(TUE, 'Waiting');
+    state().init();
+    state().showCarrySheetIfDue();
+    state().hideCatchUpSheet();
+
+    state().updateSchedule({ reminderEnabled: false });
+
+    expect(state().catchUpDue).toBe(false);
+    expect(textsLeft()).toEqual(['Waiting']);
+  });
+
+  it('never writes lastCarryPromptDate -- only the evening Move N / Let them go is a decision', () => {
+    resetFakeRepos();
+    tasksRepo.add(MON, 'A');
+    tasksRepo.add(TUE, 'B');
+    state().init();
+
+    state().showCarrySheetIfDue();
+    state().hideCatchUpSheet();
+    state().keepCatchUpTasks([]);
+    state().letCatchUpTasksGo();
+
+    expect(state().settings.lastCarryPromptDate).toBeNull();
+  });
+
+  it('with nothing waiting there is no catch-up sheet to raise', () => {
+    resetFakeRepos();
+    tasksRepo.add(WED, 'Only today');
+
+    state().init();
+
+    expect(state().catchUpDue).toBe(false);
+    state().showCarrySheetIfDue();
+    expect(state().catchUpSheetVisible).toBe(false);
+  });
+});
+
+describe('both sheets due (spec 3.5 v9: catch-up first, then the evening sheet)', () => {
+  function state() {
+    return useAppStore.getState();
+  }
+
+  function setUpBothDue() {
+    jest.setSystemTime(new Date(2026, 9, 7, 20, 30)); // Wednesday evening: planning mode
+    resetFakeRepos();
+    tasksRepo.add(TUE, 'Missed leftover');
+    tasksRepo.add(WED, 'Unfinished today');
+    state().init();
+    expect(state().catchUpDue).toBe(true);
+    expect(state().carryPromptDue).toBe(true);
+  }
+
+  it('shows the catch-up sheet first and holds the evening sheet back', () => {
+    setUpBothDue();
+
+    state().showCarrySheetIfDue();
+
+    expect(state().catchUpSheetVisible).toBe(true);
+    expect(state().carrySheetVisible).toBe(false);
+
+    state().showCarrySheetIfDue(); // still open -- must not stack the evening sheet on top
+    expect(state().carrySheetVisible).toBe(false);
+  });
+
+  it('the evening sheet follows once the catch-up sheet closes', () => {
+    setUpBothDue();
+    state().showCarrySheetIfDue();
+
+    state().hideCatchUpSheet();
+    state().showCarrySheetIfDue();
+
+    expect(state().catchUpSheetVisible).toBe(false);
+    expect(state().carrySheetVisible).toBe(true);
+  });
+
+  it("Keep N re-evaluates the evening prompt: Today's new tasks can make it due", () => {
+    jest.setSystemTime(new Date(2026, 9, 7, 20, 30));
+    resetFakeRepos();
+    const leftover = tasksRepo.add(TUE, 'Missed leftover');
+    state().init();
+    expect(state().carryPromptDue).toBe(false); // Today is empty: nothing to move yet
+
+    state().keepCatchUpTasks([leftover.id]);
+
+    expect(state().carryPromptDue).toBe(true);
+  });
+});
+
+describe('the evening decision (spec 3.5 v9)', () => {
+  function state() {
+    return useAppStore.getState();
+  }
+
+  it('Let them go in the evening, then the next morning: no catch-up sheet, the leftovers are gone', () => {
+    jest.setSystemTime(new Date(2026, 9, 6, 20, 30)); // Tuesday evening
+    resetFakeRepos();
+    tasksRepo.add(TUE, 'Left on purpose');
+    state().init();
+    state().skipCarrySheet(); // the evening "Let them go": a decision
+
+    jest.setSystemTime(new Date(2026, 9, 7, 9, 0)); // Wednesday morning
+    state().runRollover();
+
+    expect(state().catchUpTasks).toEqual([]);
+    expect(state().catchUpDue).toBe(false);
+    expect(textsLeft()).toEqual([]);
+  });
+
+  it('skipping the evening entirely: the next morning the leftovers are offered instead', () => {
+    jest.setSystemTime(new Date(2026, 9, 6, 20, 30)); // Tuesday evening, app never decided
+    resetFakeRepos();
+    tasksRepo.add(TUE, 'Never decided');
+    state().init();
+
+    jest.setSystemTime(new Date(2026, 9, 7, 9, 0)); // Wednesday morning
+    state().runRollover();
+
+    expect(state().catchUpTasks.map((t) => t.text)).toEqual(['Never decided']);
+    expect(state().catchUpDue).toBe(true);
   });
 });

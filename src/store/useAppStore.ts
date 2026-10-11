@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import * as settingsRepo from '@/db/settingsRepo';
 import * as tasksRepo from '@/db/tasksRepo';
-import { movableTaskCount, moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
+import { movableTaskCount, moveCatchUpToToday, moveTasks, shouldShowCarryPrompt } from '@/logic/carryOver';
 import { batchCompletesToday } from '@/logic/completion';
 import { CompletionBatch, type CompletionState } from '@/logic/completionBatch';
 import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
@@ -45,6 +45,9 @@ type AppState = {
   carryPromptDue: boolean;
   /** Spec 3.5 v9: past-day tasks the user never decided about, oldest day first. Not part of Today/Tomorrow, so they don't count toward the 10-task limit. */
   catchUpTasks: tasksRepo.Task[];
+  /** Like carryPromptDue: raised on every app open (rollover), revealed by the screen once focused + active. */
+  catchUpDue: boolean;
+  catchUpSheetVisible: boolean;
 
   init: () => void;
   refreshTasks: () => void;
@@ -70,6 +73,14 @@ type AppState = {
   openCarrySheet: () => void;
   skipCarrySheet: () => void;
   moveCarryOverTasks: (taskIds: string[]) => void;
+  /** Footer link `N left from last time ›` (spec 3.5 v9). */
+  openCatchUpSheet: () => void;
+  /** Backdrop tap: closes only and deletes nothing (spec 3.5 v9) -- the sheet returns on the next app open. */
+  hideCatchUpSheet: () => void;
+  /** Keep N: moves the selected tasks to Today and deletes every other catch-up task, atomically. */
+  keepCatchUpTasks: (taskIds: string[]) => void;
+  /** Let them go: deletes every catch-up task. */
+  letCatchUpTasksGo: () => void;
   /** Persists any given schedule fields, recomputes mode/day keys, and reschedules the reminder (spec 3.6). */
   updateSchedule: (
     partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'keepUnplanned'>>
@@ -102,6 +113,37 @@ export const useAppStore = create<AppState>((set, get) => {
     get().refreshTasks();
   });
 
+  // `raiseCatchUp` is false for a settings change: that isn't an app open, so
+  // it must not re-pop a catch-up sheet the user already dismissed (spec 3.5 v9).
+  // Never raised while the sheet is already up, or it would reappear on close.
+  function rollover(raiseCatchUp: boolean) {
+    get().commitPendingBatch(); // spec 3.5: commit the pending batch before purging
+    const { settings } = get();
+    const now = new Date();
+    const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
+    const purge = planPurge({
+      keepUnplanned: settings.keepUnplanned,
+      todayDay,
+      lastCarryPromptDate: settings.lastCarryPromptDate,
+    });
+    if (purge.deleteBefore !== null) tasksRepo.purgeBefore(purge.deleteBefore);
+    if (purge.deleteDay !== null) tasksRepo.purgeDay(purge.deleteDay);
+    const catchUpTasks = tasksRepo.listBefore(todayDay);
+    const { catchUpDue, catchUpSheetVisible } = get();
+    set({
+      todayDay,
+      tomorrowDay,
+      mode,
+      selectedView: defaultView,
+      todayTasks: tasksRepo.listByDay(todayDay),
+      tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+      catchUpTasks,
+      catchUpDue: catchUpTasks.length > 0 && (catchUpDue || (raiseCatchUp && !catchUpSheetVisible)),
+      catchUpSheetVisible: catchUpTasks.length > 0 && catchUpSheetVisible,
+    });
+    get().evaluateCarryPrompt();
+  }
+
   return {
     isReady: false,
     settings: settingsRepo.DEFAULT_SETTINGS,
@@ -117,6 +159,8 @@ export const useAppStore = create<AppState>((set, get) => {
     carrySheetVisible: false,
     carryPromptDue: false,
     catchUpTasks: [],
+    catchUpDue: false,
+    catchUpSheetVisible: false,
 
     init: () => {
       let settings = settingsRepo.getSettings();
@@ -186,29 +230,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     setSelectedView: (view) => set({ selectedView: resolveView(view, get().mode) }),
 
-    runRollover: () => {
-      get().commitPendingBatch(); // spec 3.5: commit the pending batch before purging
-      const { settings } = get();
-      const now = new Date();
-      const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
-      const purge = planPurge({
-        keepUnplanned: settings.keepUnplanned,
-        todayDay,
-        lastCarryPromptDate: settings.lastCarryPromptDate,
-      });
-      if (purge.deleteBefore !== null) tasksRepo.purgeBefore(purge.deleteBefore);
-      if (purge.deleteDay !== null) tasksRepo.purgeDay(purge.deleteDay);
-      set({
-        todayDay,
-        tomorrowDay,
-        mode,
-        selectedView: defaultView,
-        todayTasks: tasksRepo.listByDay(todayDay),
-        tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
-        catchUpTasks: tasksRepo.listBefore(todayDay),
-      });
-      get().evaluateCarryPrompt();
-    },
+    runRollover: () => rollover(true),
 
     refreshMode: () => {
       const { settings } = get();
@@ -233,7 +255,14 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     showCarrySheetIfDue: () => {
-      if (get().carryPromptDue) set({ carryPromptDue: false, carrySheetVisible: true });
+      const { carrySheetVisible, catchUpSheetVisible, catchUpDue, catchUpTasks, carryPromptDue } = get();
+      if (carrySheetVisible || catchUpSheetVisible) return; // one sheet at a time
+      // Spec 3.5 v9: catch-up first; the evening sheet follows once it closes.
+      if (catchUpDue && catchUpTasks.length > 0) {
+        set({ catchUpDue: false, catchUpSheetVisible: true });
+        return;
+      }
+      if (carryPromptDue) set({ carryPromptDue: false, carrySheetVisible: true });
     },
 
     hideCarrySheet: () => set({ carrySheetVisible: false }),
@@ -262,6 +291,28 @@ export const useAppStore = create<AppState>((set, get) => {
       get().refreshTasks();
     },
 
+    openCatchUpSheet: () => set({ catchUpSheetVisible: true }),
+
+    hideCatchUpSheet: () => {
+      set({ catchUpSheetVisible: false });
+      get().evaluateCarryPrompt(); // spec 3.5 v9: the evening sheet is evaluated again once this one closes
+    },
+
+    keepCatchUpTasks: (taskIds) => {
+      const { todayDay } = get();
+      moveCatchUpToToday(taskIds, todayDay);
+      set({ catchUpSheetVisible: false, catchUpDue: false, catchUpTasks: tasksRepo.listBefore(todayDay) });
+      get().refreshTasks();
+      get().evaluateCarryPrompt(); // Today just gained tasks, which can make the evening sheet due
+    },
+
+    letCatchUpTasksGo: () => {
+      const { todayDay } = get();
+      tasksRepo.purgeBefore(todayDay);
+      set({ catchUpSheetVisible: false, catchUpDue: false, catchUpTasks: tasksRepo.listBefore(todayDay) });
+      get().evaluateCarryPrompt();
+    },
+
     updateSchedule: (partial) => {
       if (partial.planningTime !== undefined) settingsRepo.setPlanningTime(partial.planningTime);
       if (partial.dayEndTime !== undefined) settingsRepo.setDayEndTime(partial.dayEndTime);
@@ -270,7 +321,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
       const settings = { ...get().settings, ...partial };
       set({ settings });
-      get().runRollover(); // spec 3.6: recompute the mode immediately
+      rollover(false); // spec 3.6: recompute the mode immediately
       // Best-effort, same as init()'s call -- see the comment there.
       applyReminderSchedule(settings).catch((error) => logDevError('applyReminderSchedule (updateSchedule)', error));
     },
