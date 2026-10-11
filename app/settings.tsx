@@ -32,6 +32,23 @@ export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateSchedule = useAppStore((s) => s.updateSchedule);
   const updateAppearance = useAppStore((s) => s.updateAppearance);
+  const catchUpCount = useAppStore((s) => s.catchUpTasks.length);
+
+  /**
+   * Spec 3.5 v9: turning Keep OFF runs the strict rollover, which would
+   * delete any waiting catch-up tasks -- so ask first. Cancel leaves the
+   * (controlled) switch on.
+   */
+  function handleKeepUnplannedChange(enabled: boolean) {
+    if (enabled || catchUpCount === 0) {
+      updateSchedule({ keepUnplanned: enabled });
+      return;
+    }
+    Alert.alert(`Delete ${catchUpCount} kept ${catchUpCount === 1 ? 'task' : 'tasks'}?`, undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => updateSchedule({ keepUnplanned: false }) },
+    ]);
+  }
 
   /**
    * Day-end (E) and planning time (P) ranges no longer overlap (E is
@@ -126,7 +143,7 @@ export default function SettingsScreen() {
             <Switch
               accessibilityLabel="Keep unplanned tasks"
               value={settings.keepUnplanned}
-              onValueChange={(value) => updateSchedule({ keepUnplanned: value })}
+              onValueChange={handleKeepUnplannedChange}
             />
           </View>
           <Text style={styles.caption}>

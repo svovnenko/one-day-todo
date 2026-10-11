@@ -62,6 +62,23 @@ export function purgeBefore(dayKey: string): number {
   return before - tasks.length;
 }
 
+export function purgeDay(dayKey: string): number {
+  const before = tasks.length;
+  tasks = tasks.filter((t) => t.day !== dayKey);
+  return before - tasks.length;
+}
+
+export function listBefore(dayKey: string): Task[] {
+  return tasks
+    .filter((t) => t.day < dayKey)
+    .slice()
+    .sort((a, b) => (a.day === b.day ? a.position - b.position : a.day < b.day ? -1 : 1));
+}
+
+export function inTransaction(fn: () => void): void {
+  fn();
+}
+
 /** Test-only: empties the in-memory table. */
 export function __reset(): void {
   tasks = [];

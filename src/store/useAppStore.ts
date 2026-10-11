@@ -9,7 +9,7 @@ import { isValidDayEnd, isValidPlanningTime } from '@/logic/dates';
 import { logDevError } from '@/logic/devError';
 import { freeSlots, isListFull, MAX_TASK_LENGTH } from '@/logic/limits';
 import { applyReminderSchedule } from '@/logic/notifications';
-import { planRollover } from '@/logic/rollover';
+import { planPurge, planRollover } from '@/logic/rollover';
 import { reconcileTaskList } from '@/logic/taskListDiff';
 import { resolveView } from '@/logic/viewLock';
 
@@ -43,6 +43,8 @@ type AppState = {
   carrySheetVisible: boolean;
   /** True until revealed -- the screen decides WHEN (focused + active), since a mid-transition sheet can swallow touches on iOS. */
   carryPromptDue: boolean;
+  /** Spec 3.5 v9: past-day tasks the user never decided about, oldest day first. Not part of Today/Tomorrow, so they don't count toward the 10-task limit. */
+  catchUpTasks: tasksRepo.Task[];
 
   init: () => void;
   refreshTasks: () => void;
@@ -114,6 +116,7 @@ export const useAppStore = create<AppState>((set, get) => {
     restoreVersion: {},
     carrySheetVisible: false,
     carryPromptDue: false,
+    catchUpTasks: [],
 
     init: () => {
       let settings = settingsRepo.getSettings();
@@ -188,7 +191,13 @@ export const useAppStore = create<AppState>((set, get) => {
       const { settings } = get();
       const now = new Date();
       const { todayDay, tomorrowDay, mode, defaultView } = planRollover(now, settings);
-      tasksRepo.purgeBefore(todayDay);
+      const purge = planPurge({
+        keepUnplanned: settings.keepUnplanned,
+        todayDay,
+        lastCarryPromptDate: settings.lastCarryPromptDate,
+      });
+      if (purge.deleteBefore !== null) tasksRepo.purgeBefore(purge.deleteBefore);
+      if (purge.deleteDay !== null) tasksRepo.purgeDay(purge.deleteDay);
       set({
         todayDay,
         tomorrowDay,
@@ -196,6 +205,7 @@ export const useAppStore = create<AppState>((set, get) => {
         selectedView: defaultView,
         todayTasks: tasksRepo.listByDay(todayDay),
         tomorrowTasks: tasksRepo.listByDay(tomorrowDay),
+        catchUpTasks: tasksRepo.listBefore(todayDay),
       });
       get().evaluateCarryPrompt();
     },

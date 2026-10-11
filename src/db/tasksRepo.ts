@@ -102,3 +102,20 @@ export function purgeBefore(dayKey: string): number {
   const result = getDb().runSync('DELETE FROM tasks WHERE day < ?', dayKey);
   return result.changes;
 }
+
+/** Deletes every task on exactly `dayKey` (spec 3.5 v9: the day the user already decided about). Returns the count removed. */
+export function purgeDay(dayKey: string): number {
+  const result = getDb().runSync('DELETE FROM tasks WHERE day = ?', dayKey);
+  return result.changes;
+}
+
+/** Every task on a day strictly before `dayKey`, oldest day first, then list order (spec 3.5 v9 catch-up). */
+export function listBefore(dayKey: string): Task[] {
+  const rows = getDb().getAllSync<TaskRow>('SELECT * FROM tasks WHERE day < ? ORDER BY day ASC, position ASC', dayKey);
+  return rows.map(fromRow);
+}
+
+/** Runs `fn` in one SQLite transaction, so a multi-step change either fully lands or not at all. */
+export function inTransaction(fn: () => void): void {
+  getDb().withTransactionSync(fn);
+}

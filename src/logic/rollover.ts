@@ -16,6 +16,32 @@ export type RolloverPlan = {
   defaultView: 'today' | 'tomorrow';
 };
 
+export type PurgePlan = {
+  /** Delete every task whose day is strictly before this day key (strict mode). */
+  deleteBefore: string | null;
+  /** Delete every task on exactly this day (the day the user already decided about). */
+  deleteDay: string | null;
+};
+
+/**
+ * Spec 3.5 v9, "delete by decision, never by accident": which past days a
+ * rollover may delete. Keep OFF is the strict pre-v9 rule. Keep ON deletes
+ * only the day the user answered the evening sheet for (`Move N` / `Let
+ * them go` sets lastCarryPromptDate); every other past day is left as
+ * pending catch-up tasks. The `< todayDay` guard matters: during the
+ * decided evening itself lastCarryPromptDate === todayDay, and today's
+ * tasks must never be purged.
+ */
+export function planPurge(args: {
+  keepUnplanned: boolean;
+  todayDay: string;
+  lastCarryPromptDate: string | null;
+}): PurgePlan {
+  if (!args.keepUnplanned) return { deleteBefore: args.todayDay, deleteDay: null };
+  const decided = args.lastCarryPromptDate;
+  return { deleteBefore: null, deleteDay: decided !== null && decided < args.todayDay ? decided : null };
+}
+
 /**
  * Pure day/mode math for a rollover -- the DB purge and pending-undo
  * commit are side effects the caller performs (useAppStore's
