@@ -96,6 +96,10 @@ jest.mock('react-native', () => {
   RN.Keyboard.dismiss = () => {
     for (const callback of listeners.keyboardDidHide ?? []) callback();
   };
+  // AppState.currentState is undefined under Jest, which would keep
+  // useCarrySheetReveal's "app is active" gate shut forever. A foregrounded
+  // app is what a user looking at the screen has, so tests get that.
+  RN.AppState.currentState = 'active';
   return RN;
 });
 
