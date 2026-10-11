@@ -58,6 +58,7 @@ export default function HomeScreen() {
   const moveCarryOverTasks = useAppStore((s) => s.moveCarryOverTasks);
   const catchUpTasks = useAppStore((s) => s.catchUpTasks);
   const catchUpSheetVisible = useAppStore((s) => s.catchUpSheetVisible);
+  const openCatchUpSheet = useAppStore((s) => s.openCatchUpSheet);
   const hideCatchUpSheet = useAppStore((s) => s.hideCatchUpSheet);
   const keepCatchUpTasks = useAppStore((s) => s.keepCatchUpTasks);
   const letCatchUpTasksGo = useAppStore((s) => s.letCatchUpTasksGo);
@@ -183,7 +184,7 @@ export default function HomeScreen() {
   const emptyMessage =
     selectedView === 'today' && lastCompletedDate === todayDay ? 'Done for today.' : 'Nothing here. Tap + to add.';
 
-  // Spec 3.2/3.4: up to two footer lines, computed by useFooterLines
+  // Spec 3.2/3.4/3.5: up to three footer lines, computed by useFooterLines
   // (wraps footerLines()) so combinations are unit tested, not re-derived here.
   const footerLineList = useFooterLines();
   const footerElement = useMemo(() => {
@@ -194,7 +195,7 @@ export default function HomeScreen() {
           line.tappable ? (
             <Pressable
               key={line.text}
-              onPress={openCarrySheet}
+              onPress={line.kind === 'catchUp' ? openCatchUpSheet : openCarrySheet}
               hitSlop={{ top: 8, bottom: 8 }}
               style={({ pressed }) => pressed && styles.footerLinePressed}
             >
@@ -208,7 +209,7 @@ export default function HomeScreen() {
         )}
       </View>
     );
-  }, [footerLineList, openCarrySheet, styles]);
+  }, [footerLineList, openCarrySheet, openCatchUpSheet, styles]);
 
   if (!isReady) {
     return <SafeAreaView testID="home-screen" style={styles.screen} />;

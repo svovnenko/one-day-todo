@@ -8,8 +8,8 @@ import { useAppStore } from '@/store/useAppStore';
 
 /**
  * Wraps the pure footerLines() with its store selectors (spec 3.2/3.4):
- * viewed-list-full, Tomorrow-full, and whether Today has anything
- * movable (excluding mid-completion tasks).
+ * viewed-list-full, Tomorrow-full, whether Today has anything movable
+ * (excluding mid-completion tasks), and how many catch-up tasks wait (3.5 v9).
  */
 export function useFooterLines(): FooterLine[] {
   const selectedView = useAppStore((s) => s.selectedView);
@@ -17,6 +17,7 @@ export function useFooterLines(): FooterLine[] {
   const todayTasks = useAppStore((s) => s.todayTasks);
   const tomorrowTasks = useAppStore((s) => s.tomorrowTasks);
   const completion = useAppStore((s) => s.completion);
+  const catchUpCount = useAppStore((s) => s.catchUpTasks.length);
 
   const viewedFull = isListFull(selectedView === 'today' ? todayTasks.length : tomorrowTasks.length);
   const tomorrowFull = isListFull(tomorrowTasks.length);
@@ -26,7 +27,7 @@ export function useFooterLines(): FooterLine[] {
   );
 
   return useMemo(
-    () => footerLines({ view: selectedView, mode, viewedFull, tomorrowFull, hasMovable }),
-    [selectedView, mode, viewedFull, tomorrowFull, hasMovable]
+    () => footerLines({ view: selectedView, mode, viewedFull, tomorrowFull, hasMovable, catchUpCount }),
+    [selectedView, mode, viewedFull, tomorrowFull, hasMovable, catchUpCount]
   );
 }
