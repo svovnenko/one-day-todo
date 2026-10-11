@@ -9,6 +9,7 @@ export type Settings = {
   lastCarryPromptDate: string | null; // 'YYYY-MM-DD', null if never shown
   lastCompletedDate: string | null; // 'YYYY-MM-DD', null if never emptied Today by completing (spec 3.4/4 v6)
   appearance: Appearance; // 'system' | 'light' | 'dark', default 'system' (spec 3.6 v8)
+  keepUnplanned: boolean; // default on; a missing stored value means on, so existing installs get v9 (spec 3.5)
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -18,12 +19,19 @@ export const DEFAULT_SETTINGS: Settings = {
   lastCarryPromptDate: null,
   lastCompletedDate: null,
   appearance: 'system',
+  keepUnplanned: true,
 };
 
 const VALID_APPEARANCES: Appearance[] = ['system', 'light', 'dark'];
 
 type StoredKey =
-  'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'lastCarryPromptDate' | 'lastCompletedDate' | 'appearance';
+  | 'planningTime'
+  | 'dayEndTime'
+  | 'reminderEnabled'
+  | 'lastCarryPromptDate'
+  | 'lastCompletedDate'
+  | 'appearance'
+  | 'keepUnplanned';
 
 function getRaw(key: StoredKey): string | null {
   const row = getDb().getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -50,7 +58,17 @@ export function getSettings(): Settings {
   const appearance = VALID_APPEARANCES.includes(appearanceRaw as Appearance)
     ? (appearanceRaw as Appearance)
     : DEFAULT_SETTINGS.appearance;
-  return { planningTime, dayEndTime, reminderEnabled, lastCarryPromptDate, lastCompletedDate, appearance };
+  const keepUnplannedRaw = getRaw('keepUnplanned');
+  const keepUnplanned = keepUnplannedRaw === null ? DEFAULT_SETTINGS.keepUnplanned : keepUnplannedRaw === '1';
+  return {
+    planningTime,
+    dayEndTime,
+    reminderEnabled,
+    lastCarryPromptDate,
+    lastCompletedDate,
+    appearance,
+    keepUnplanned,
+  };
 }
 
 export function setPlanningTime(hhmm: string): void {
@@ -75,4 +93,8 @@ export function setLastCompletedDate(dayKey: string): void {
 
 export function setAppearance(appearance: Appearance): void {
   setRaw('appearance', appearance);
+}
+
+export function setKeepUnplanned(enabled: boolean): void {
+  setRaw('keepUnplanned', enabled ? '1' : '0');
 }

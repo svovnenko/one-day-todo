@@ -106,17 +106,32 @@ export default function SettingsScreen() {
               })}
             </View>
           </View>
-          <Text style={styles.caption}>Tasks left after this time are deleted.</Text>
+          <Text style={styles.caption}>The day switches at this time.</Text>
 
           <View style={styles.divider} />
 
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Daily reminder</Text>
             <Switch
+              accessibilityLabel="Daily reminder"
               value={settings.reminderEnabled}
               onValueChange={(value) => updateSchedule({ reminderEnabled: value })}
             />
           </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Keep unplanned tasks</Text>
+            <Switch
+              accessibilityLabel="Keep unplanned tasks"
+              value={settings.keepUnplanned}
+              onValueChange={(value) => updateSchedule({ keepUnplanned: value })}
+            />
+          </View>
+          <Text style={styles.caption}>
+            If you skip the evening planning, unfinished tasks wait until you next open the app.
+          </Text>
         </View>
 
         <Text style={styles.sectionTitle}>Appearance</Text>

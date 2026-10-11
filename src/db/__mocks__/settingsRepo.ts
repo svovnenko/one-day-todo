@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lastCarryPromptDate: null,
   lastCompletedDate: null,
   appearance: 'system',
+  keepUnplanned: true,
 };
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -38,6 +39,10 @@ export function setLastCompletedDate(dayKey: string): void {
 
 export function setAppearance(appearance: Settings['appearance']): void {
   settings.appearance = appearance;
+}
+
+export function setKeepUnplanned(enabled: boolean): void {
+  settings.keepUnplanned = enabled;
 }
 
 /** Test-only: resets settings to the defaults, optionally overridden. */

@@ -70,7 +70,7 @@ type AppState = {
   moveCarryOverTasks: (taskIds: string[]) => void;
   /** Persists any given schedule fields, recomputes mode/day keys, and reschedules the reminder (spec 3.6). */
   updateSchedule: (
-    partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled'>>
+    partial: Partial<Pick<settingsRepo.Settings, 'planningTime' | 'dayEndTime' | 'reminderEnabled' | 'keepUnplanned'>>
   ) => void;
   /** Persists the Theme choice and applies it immediately (spec 3.6 v8) -- every component reads it back via useTheme(). */
   updateAppearance: (appearance: settingsRepo.Settings['appearance']) => void;
@@ -256,6 +256,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (partial.planningTime !== undefined) settingsRepo.setPlanningTime(partial.planningTime);
       if (partial.dayEndTime !== undefined) settingsRepo.setDayEndTime(partial.dayEndTime);
       if (partial.reminderEnabled !== undefined) settingsRepo.setReminderEnabled(partial.reminderEnabled);
+      if (partial.keepUnplanned !== undefined) settingsRepo.setKeepUnplanned(partial.keepUnplanned);
 
       const settings = { ...get().settings, ...partial };
       set({ settings });

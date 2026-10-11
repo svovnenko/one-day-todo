@@ -1,6 +1,6 @@
 # One-Day To-Do — Product & Technical Spec
 
-> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v7: move sheet redesign).
+> Handoff document for the development session. Everything here was agreed with the owner on 2026-09-29 (v9: keep unplanned tasks, catch-up sheet).
 > Build exactly this; anything not listed is out of scope. When in doubt, choose the simpler option.
 
 ---
@@ -12,7 +12,7 @@ A minimal "paper notepad" to-do app for iPhone. It holds **one day at a time**:
 - You write a plain list of tasks for **today** (and, from the evening onward, for **tomorrow**).
 - **Swipe right** on a task to complete it. It is struck through and removed, and a round **Undo** button with a countdown ring appears for 2 seconds. After that it is permanently deleted, with no history ("done and forget").
 - At a configurable **planning time** (default **20:00**) the app switches to **Tomorrow** so you can plan the next day, and offers to **move unfinished tasks** there. Tasks that keep getting moved show a small **carry-over counter** (×2, ×3…).
-- At a configurable **day-end time** (default **04:00**, not midnight, so a late night still counts as today), whatever is left of today is **permanently deleted**. Tomorrow becomes Today.
+- At a configurable **day-end time** (default **04:00**, not midnight, so a late night still counts as today), Tomorrow becomes Today. What happens to the tasks left in the old day depends on whether the user **decided** about them (v9): leftovers the user chose not to move in the evening are **permanently deleted**; if the user never planned that evening, they are **kept until the app is next opened** and offered in a catch-up sheet (setting `Keep unplanned tasks`, default on; turn it off for strict deletion).
 - No details, no priorities, no due times, no recurring tasks, no timers, no history, no stats, no accounts.
 
 The target user is the owner only (single user, a personal app).
@@ -113,10 +113,27 @@ The target user is the owner only (single user, a personal app).
   - **When Tomorrow is full (v7):** the same spot shows `Tomorrow is full` in grey, or `Tomorrow is full too` when the `Full — finish a task to add more` line is shown above it. It isn't tappable and has no chevron. Once a slot frees up (a task is completed in Tomorrow), it turns back into the link.
   - If Today has no movable tasks (all ×5, or none left), no link is shown.
 - **Counter display:** when `carry_count >= 1`, show `×N` after the task text in grey `#B3B3B3`, 13pt, with 6pt spacing. For example `Call bank ×2` means the task was moved twice.
-- **Owner's rule:** if the user never opens the app between P and E, unfinished tasks are **deleted at day end without a prompt**. There is no morning catch-up; this was explicitly rejected.
+- **Unplanned days (v9):** what happens when the user never used the evening sheet is governed by the `Keep unplanned tasks` setting; see 3.5.
 
 ### 3.5 Day-end rollover
-- The rule: **delete every task whose `day` < today** (logical date).
+- **Principle (v9): delete by decision, never by accident.**
+- **`Keep unplanned tasks` OFF (strict, the pre-v9 behaviour):** delete every task whose `day` < today (logical date).
+- **`Keep unplanned tasks` ON (default):** for tasks whose `day` < today:
+  - **Decided day:** if `day === lastCarryPromptDate` (the user pressed `Move N` or `Let them go` that evening), delete them. The user chose to leave them.
+  - **Undecided day:** otherwise **keep them** as *pending catch-up* tasks, however many days pass. This covers leftovers from an evening with no planning, and tasks planned for a day on which the app was never opened.
+  - Pending catch-up tasks are **not** part of Today or Tomorrow: they aren't listed there and don't count toward the 10-task limit.
+- **Catch-up sheet (v9):** when pending catch-up tasks exist and the main screen is focused and active (the same reveal rule as the evening sheet), show the move sheet in catch-up mode:
+  - Title `Left from last time`. Rows are ordered by day, then position; all **unselected**; same selection style as the evening sheet.
+  - N = 10 minus Today's open tasks. Subtitle `Choose up to N` when N is smaller than the number of keepable tasks, `Choose what to keep` otherwise, or `Today is full` when N = 0 (rows faint, nothing selectable).
+  - Tasks with `carry_count >= 5` are faint with `can't move again`.
+  - Buttons: `Keep N` (disabled as `Keep` when nothing is selected) and `Let them go`.
+  - **Keep N:** the selected tasks move to Today (appended, `carry_count + 1`, the same duplicate rule as 3.4). **All other pending catch-up tasks are deleted.**
+  - **Let them go:** all pending catch-up tasks are deleted.
+  - **Backdrop tap** only closes the sheet and deletes nothing. The sheet shows again on the next app open, and a footer line stays available (below).
+  - A catch-up counts once however many days were missed: `carry_count` goes up by 1.
+  - If both sheets are due, the catch-up sheet comes first; the evening sheet follows after it closes.
+- **Footer line while catch-up tasks are pending (Today view, any mode):** `N left from last time ›` (tappable, reopens the sheet), shown as the last footer line.
+- **Turning the setting OFF while catch-up tasks are pending:** confirm with an alert, `Delete N kept tasks?` → `Delete` / `Cancel`. `Cancel` leaves the setting on.
 - The "Tomorrow" list needs no move; its `day` value simply becomes today.
 - Run the rollover:
   1. on app launch (before the first render of the list),
@@ -129,8 +146,9 @@ The target user is the owner only (single user, a personal app).
 A **small grey gear icon** in the top-right corner opens a simple grouped list:
 - **Schedule**
   - `Planning time`: a time picker limited to **12:00–23:59** (default **20:00**)
-  - `Day ends at`: a choice of **00:00 / 01:00 / 02:00 / 03:00 / 04:00** (default **04:00**), with the caption: "Tasks left after this time are deleted."
+  - `Day ends at`: a choice of **00:00 / 01:00 / 02:00 / 03:00 / 04:00** (default **04:00**), with the caption: "The day switches at this time." (v9; the old text "Tasks left after this time are deleted." is no longer always true)
   - `Daily reminder`: an on/off switch (default **on**)
+  - `Keep unplanned tasks` (v9): an on/off switch (default **on**), with the caption: "If you skip the evening planning, unfinished tasks wait until you next open the app." Stored as `keepUnplanned`; a missing value means on.
 - **Appearance (v8)**
   - `Theme`: a choice of **System / Light / Dark** (default **System**). It applies instantly and is stored as the `appearance` setting.
 
@@ -189,7 +207,7 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- keys: planningTime ('20:00'), dayEndTime ('04:00'), reminderEnabled ('1'), lastCarryPromptDate ('YYYY-MM-DD'), lastCompletedDate ('YYYY-MM-DD', v6)
+-- keys: planningTime ('20:00'), dayEndTime ('04:00'), reminderEnabled ('1'), lastCarryPromptDate ('YYYY-MM-DD'), lastCompletedDate ('YYYY-MM-DD', v6), appearance (v8), keepUnplanned ('1', v9)
 ```
 
 - There is no `done` column. Completion is pending in memory during the 2-second undo window, then the row is deleted. If the app is killed during the window, the task survives, which is the safe failure.
@@ -271,6 +289,12 @@ __tests__/                 # jest-expo unit tests for src/logic/* (and completio
 | 22 | Tap + and type `buy milk` | The first letter stays lowercase |
 | 23 | Complete every task in Today | `Done for today.` is shown |
 | 24 | Open a new day with an empty Today (nothing completed yet) | `Nothing here. Tap + to add.` is shown |
+| 25 | Keep ON. Leave 3 tasks in Today, don't open the app in the evening, open it the next morning | The `Left from last time` sheet lists the 3 tasks, unselected |
+| 26 | In that sheet, select 1 and tap `Keep 1` | That task is in Today with its counter +1; the other 2 are gone |
+| 27 | Keep ON. In the evening tap `Let them go`; open the next morning | No sheet; the leftovers are gone |
+| 28 | Keep ON. Plan 2 tasks for tomorrow, then don't open the app for 3 days | On opening, the sheet lists those 2 tasks (and any undecided leftovers) |
+| 29 | Close the catch-up sheet by tapping the backdrop | Nothing is deleted; Today shows `N left from last time ›`; the sheet returns on the next open |
+| 30 | Keep OFF | The pre-v9 behaviour: everything from past days is deleted at day end |
 
 ---
 
@@ -317,7 +341,7 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 | Proposal | Decision |
 |---|---|
 | Day ends at a configurable time (default 04:00) instead of midnight | **Accepted** |
-| Morning catch-up for unreviewed leftovers | **Rejected**: unfinished tasks are deleted at day end if not moved |
+| Morning catch-up for unreviewed leftovers | **Rejected** in v2. **Accepted in v9** as the `Keep unplanned tasks` setting (default on) after real use: tasks were lost on mornings after an unplanned evening. Principle: delete by decision, never by accident |
 | Safer completion (swipe + Undo pill) | **Accepted**. Tap-to-edit was later removed: tasks can't be edited (v4) |
 | Carry-over counter (×N, unchecked at ≥3) | **Accepted** |
 | Daily "N done" progress line | **Rejected**: "done and forget" |
@@ -338,4 +362,4 @@ Scan the QR code with the iPhone Camera app, which opens it in Expo Go. The phon
 
 ## 11. Out of scope (do NOT build)
 
-Accounts or login, cloud sync, any task backup or export/import, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, localization, iPad layout, a morning catch-up prompt.
+Accounts or login, cloud sync, any task backup or export/import, history or statistics, progress counters, recurring tasks, due times, priorities, notes, categories or multiple lists, reordering, search, widgets, localization, iPad layout, an automatic roll-over of unfinished tasks (the catch-up always asks).
